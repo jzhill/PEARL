@@ -64,11 +64,17 @@ for (report in names(reports)) {
     token          = config$token,
     report_id      = config$report_id,
     verbose        = TRUE,
-    config_options = list(timeout = 60)  # Increase timeout to 60 seconds
+    config_options = list(timeout = 5)  # Increase timeout to 5 seconds
   )$data
   
+  # Build the subdirectory path and ensure it exists
+  subdir <- here("data-raw", report)
+  if (!dir.exists(subdir)) {
+    dir.create(subdir, recursive = TRUE)
+  }
+  
   # Build the filename with the datestamp
-  file_path <- here("data-raw", paste0(config$prefix, "_", datestamp, ".rds"))
+  file_path <- here("data-raw", report, paste0(config$prefix, "_", datestamp, ".rds"))
   
   # Save the downloaded report data as an .rds file
   saveRDS(report_data, file = file_path)
