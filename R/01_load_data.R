@@ -1,6 +1,6 @@
 # Title and description --------------------------------------------
 
-# Loading PEARL data from REDCap
+# Getting PEARL data from REDCap
 # Data are owned by University of Sydney and Kiribati MHMS
 
 # Author:           Jeremy Hill
