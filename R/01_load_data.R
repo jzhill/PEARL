@@ -29,9 +29,10 @@ if (token_screen == "" || token_hh == "" || token_treat == "") {
   stop("API token not found in environment. Please set REDCAP_API_TOKEN in your .Renviron file.")
 }
 
-## Retrieve each report and save as raw data
+## Retrieve each report and save as raw data ------------------------
 
-# Create a named list for each project configuration
+# Create a named list for each report configuration
+
 reports <- list(
   screening = list(
     token    = token_screen,
@@ -50,7 +51,8 @@ reports <- list(
   )
 )
 
-# Loop over each project and process the report download and saving
+# Loop over each report and process the report download and saving
+
 for (report in names(reports)) {
   config <- reports[[report]]
   
