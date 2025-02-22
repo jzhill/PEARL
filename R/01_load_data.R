@@ -18,6 +18,7 @@ library(REDCapR)
 uri <- "https://redcap.sydney.edu.au/api/"
 token_screen <- Sys.getenv("RCAPI_PEARL_screen")
 screen_all_results <- 40643
+datestamp <- format(Sys.time(), "%y%m%d")  # Create a datestamp to include in filenames
 
 # Check if the token was successfully retrieved
 if (token_screen == "") {
@@ -34,4 +35,4 @@ report_data <- REDCapR::redcap_report(
 )$data
 
 # Save the downloaded report data as an .rds file
-saveRDS(report_data, file = here("data-raw", "screening_all_results.rds"))
+saveRDS(report_data, file = here("data-raw", paste0("screening_all_results_", datestamp, ".rds")))
