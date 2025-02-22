@@ -63,6 +63,7 @@ for (report in names(reports)) {
     redcap_uri     = uri,
     token          = config$token,
     report_id      = config$report_id,
+    raw_or_label   = "label",
     verbose        = TRUE,
     config_options = list(timeout = 5)  # Increase timeout to 5 seconds
   )$data

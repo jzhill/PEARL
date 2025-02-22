@@ -47,3 +47,15 @@ for (folder in report_folders) {
   message("Loaded ", var_name, " from file: ", latest_file)
 }
 
+## Mutate record_id in each df to character ----------------------
+
+# Vector of the dataframe names as character strings
+df_names <- c("screening_data", "household_data", "treatment_data")
+
+# Loop to mutate record_id then reassign to variable
+
+for (df_name in df_names) {
+  df <- get(df_name)
+  df <- df %>% mutate(record_id = as.character(record_id))
+  assign(df_name, df, envir = .GlobalEnv)
+}
