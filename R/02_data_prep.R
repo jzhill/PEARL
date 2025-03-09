@@ -16,13 +16,13 @@ library(tidyverse)
 
 # Load data from .rds files in folders into dataframes ---------------------------
 
-# Define report folders
-report_folders <- c("screening", "household", "treatment")
+# Dynamically define report folders by listing subdirectories of "data-raw"
+report_folders <- list.dirs(here("data-raw"), recursive = FALSE, full.names = FALSE)
 
 for (folder in report_folders) {
+  
   # List all .rds files in the folder with a 6-digit datestamp at the end
   files <- dir(here("data-raw", folder), pattern = "\\d{6}\\.rds$", full.names = TRUE)
-  
   if (length(files) == 0) {
     warning("No files found in folder: ", folder)
     next
@@ -48,20 +48,8 @@ for (folder in report_folders) {
   message("Loaded ", var_name, " from file: ", latest_file)
 }
 
-## Mutate record_id in each df to character ----------------------
-
-# Vector of the dataframe names as character strings
-df_names <- c("screening_data", "household_data", "treatment_data")
-
-# Loop to mutate record_id then reassign to variable
-
-for (df_name in df_names) {
-  df <- get(df_name)
-  df <- df %>% mutate(record_id = as.character(record_id))
-  assign(df_name, df, envir = .GlobalEnv)
-}
-
 ## Load data dictionary CSV files into the environment ----------------------
+
 for (folder in report_folders) {
   
   # Build the filename for the data dictionary CSV file (e.g., "screening_dd.csv")
@@ -145,3 +133,5 @@ convert_field_types <- function(data, dd) {
 screening_data <- convert_field_types(screening_data, screening_dd)
 household_data <- convert_field_types(household_data, household_dd)
 treatment_data <- convert_field_types(treatment_data, treatment_dd)
+# ea_data <- convert_field_types(ea_data, ea_dd)
+
