@@ -13,6 +13,8 @@ library(here)
 library(stringr)
 library(lubridate)
 library(tidyverse)
+library(epikit)
+library(dplyr)
 
 # Load data from .rds files in folders into dataframes ---------------------------
 
@@ -134,4 +136,33 @@ screening_data <- convert_field_types(screening_data, screening_dd)
 household_data <- convert_field_types(household_data, household_dd)
 treatment_data <- convert_field_types(treatment_data, treatment_dd)
 # ea_data <- convert_field_types(ea_data, ea_dd)
+
+## Additional data prep steps -------------------------
+
+# Age category
+
+screening_data <- screening_data %>%
+  mutate(age_cat = epikit::age_categories(en_cal_age, by = 10, upper = 80))
+
+treatment_data <- treatment_data %>%
+  mutate(age_cat = epikit::age_categories(tpt_age, by = 10, upper = 80))
+
+# Epi weeks
+
+max_week <- floor_date(Sys.Date(), unit = "week", week_start = 1)
+
+screening_data <- screening_data %>%
+  mutate(week_reg = floor_date(en_date_visit, unit = "week", week_start = 1)) %>%
+  mutate(week_reg = if_else(week_reg > max_week, NA_Date_, week_reg))
+
+treatment_data <- treatment_data %>%
+  mutate(week_reg = floor_date(tpt_reg_date, unit = "week", week_start = 1)) %>%  
+  mutate(week_reg = if_else(week_reg > max_week, NA_Date_, week_reg)) %>% 
+  mutate(week_start = floor_date(tpt_start_date, unit = "week", week_start = 1)) %>%  
+  mutate(week_start = if_else(week_start > max_week, NA_Date_, week_start))
+
+household_data <- household_data %>%
+  mutate(week_enum = floor_date(hh_date, unit = "week", week_start = 1)) %>%  
+  mutate(week_enum = if_else(week_enum > max_week, NA_Date_, week_enum))
+
 
