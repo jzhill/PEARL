@@ -19,15 +19,21 @@ uri <- "https://redcap.sydney.edu.au/api/"
 token_screen <- Sys.getenv("RCAPI_PEARL_screen")
 token_hh <- Sys.getenv("RCAPI_PEARL_hh")
 token_treat <- Sys.getenv("RCAPI_PEARL_treat")
+token_ea <- Sys.getenv("RCAPI_PEARL_ea")
 report_screen_all <- 40643  # https://redcap.sydney.edu.au/redcap_v14.3.14/DataExport/index.php?pid=19019&report_id=40643
-report_hh_all <- 50913
-report_treat_all <- 47495
+report_hh_all <- 50913  # https://redcap.sydney.edu.au/redcap_v14.3.14/DataExport/index.php?pid=19007&report_id=50913
+report_treat_all <- 47495  # https://redcap.sydney.edu.au/redcap_v14.3.14/DataExport/index.php?pid=19018&report_id=47495
+# report_ea_all <- 54859  # https://redcap.sydney.edu.au/redcap_v14.3.14/DataExport/index.php?pid=24148&report_id=54859
 datestamp <- format(Sys.time(), "%y%m%d")  # Create a datestamp to include in filenames
 
 # Check if the token was successfully retrieved
 if (token_screen == "" || token_hh == "" || token_treat == "") {
   stop("API token not found in environment. Please set REDCAP_API_TOKEN in your .Renviron file.")
 }
+
+# if (token_screen == "" || token_hh == "" || token_treat == "" || token_ea == "") {
+#   stop("API token not found in environment. Please set REDCAP_API_TOKEN in your .Renviron file.")
+# }
 
 ## Retrieve each report and save as raw data ------------------------
 
@@ -47,6 +53,25 @@ reports <- list(
     report_id = report_treat_all
   )
 )
+
+# reports <- list(
+#   screening = list(
+#     token    = token_screen,
+#     report_id = report_screen_all
+#   ),
+#   household = list(
+#     token    = token_hh,
+#     report_id = report_hh_all
+#   ),
+#   treatment = list(
+#     token    = token_treat,
+#     report_id = report_treat_all
+#   ),
+#   ea = list(
+#     token    = token_ea,
+#     report_id = report_ea_all
+#   )
+# )
 
 # Loop over each report and process the report download and saving
 
