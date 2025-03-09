@@ -19,7 +19,7 @@ uri <- "https://redcap.sydney.edu.au/api/"
 token_screen <- Sys.getenv("RCAPI_PEARL_screen")
 token_hh <- Sys.getenv("RCAPI_PEARL_hh")
 token_treat <- Sys.getenv("RCAPI_PEARL_treat")
-report_screen_all <- 40643
+report_screen_all <- 40643  # https://redcap.sydney.edu.au/redcap_v14.3.14/DataExport/index.php?pid=19019&report_id=40643
 report_hh_all <- 50913
 report_treat_all <- 47495
 datestamp <- format(Sys.time(), "%y%m%d")  # Create a datestamp to include in filenames
@@ -36,18 +36,15 @@ if (token_screen == "" || token_hh == "" || token_treat == "") {
 reports <- list(
   screening = list(
     token    = token_screen,
-    report_id = report_screen_all,
-    prefix   = "screening_all_results"
+    report_id = report_screen_all
   ),
   household = list(
     token    = token_hh,
-    report_id = report_hh_all,
-    prefix   = "hh_all_enum"
+    report_id = report_hh_all
   ),
   treatment = list(
     token    = token_treat,
-    report_id = report_treat_all,
-    prefix   = "treat_all_reg"
+    report_id = report_treat_all
   )
 )
 
@@ -75,9 +72,25 @@ for (report in names(reports)) {
   }
   
   # Build the filename with the datestamp
-  file_path <- here("data-raw", report, paste0(config$prefix, "_", datestamp, ".rds"))
+  file_path <- here("data-raw", report, paste0(report, "_", datestamp, ".rds"))
   
   # Save the downloaded report data as an .rds file
   saveRDS(report_data, file = file_path)
   message("Saved to: ", file_path, "\n")
+  
+  # Now retrieve the data dictionary (metadata) for the project
+  message("Downloading data dictionary for ", report, " project...")
+  dd_data <- REDCapR::redcap_metadata_read(
+    redcap_uri = uri,
+    token = config$token,
+    verbose = TRUE,
+    config_options = list(timeout = 5)
+  )$data
+  
+  # Build the filename for the data dictionary CSV file (e.g., "screening_dd.csv")
+  dd_file_path <- here("data-raw", paste0(report, "_dd.csv"))
+  
+  # Save the data dictionary as a CSV file (this will overwrite the previous file)
+  write_csv(dd_data, file = dd_file_path)
+  message("Saved data dictionary to: ", dd_file_path, "\n")
 }
