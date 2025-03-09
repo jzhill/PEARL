@@ -12,6 +12,7 @@
 library(here)
 library(stringr)
 library(lubridate)
+library(tidyverse)
 
 # Load data from .rds files in folders into dataframes ---------------------------
 
@@ -59,3 +60,88 @@ for (df_name in df_names) {
   df <- df %>% mutate(record_id = as.character(record_id))
   assign(df_name, df, envir = .GlobalEnv)
 }
+
+## Load data dictionary CSV files into the environment ----------------------
+for (folder in report_folders) {
+  
+  # Build the filename for the data dictionary CSV file (e.g., "screening_dd.csv")
+  dd_file_path <- here("data-raw", paste0(folder, "_dd.csv"))
+  
+  if (file.exists(dd_file_path)) {
+    dd_data <- read_csv(dd_file_path)
+    # Create a variable name for the data dictionary (e.g., screening_dd)
+    dd_var_name <- paste0(folder, "_dd")
+    assign(dd_var_name, dd_data, envir = .GlobalEnv)
+    message("Loaded data dictionary for ", folder, " from file: ", dd_file_path)
+  } else {
+    warning("Data dictionary file not found for folder: ", folder)
+  }
+}
+
+## Define a function that converts column types based on the data dictionary -----------------------
+
+convert_field_types <- function(data, dd) {
+  
+  # DATE
+  date_fields1 <- dd %>%
+    filter(text_validation_type_or_show_slider_number == "date_dmy") %>%
+    pull(field_name)
+  date_fields2 <- c("calc_alt_last_date", "calc_1mrv")
+  date_fields <- union(date_fields1, date_fields2)
+  
+  # DATETIME
+  datetime_fields <- dd %>%
+    filter(text_validation_type_or_show_slider_number == "datetime_dmy") %>%
+    pull(field_name)
+  
+  # NUMERIC
+  num_fields <- dd %>%
+    filter(text_validation_type_or_show_slider_number == "number") %>%
+    pull(field_name)
+  
+  # INTEGER
+  int_fields1 <- dd %>%
+    filter(text_validation_type_or_show_slider_number == "integer") %>%
+    pull(field_name)
+  int_fields2 <- dd %>%
+    filter(field_type == "calc") %>%
+    pull(field_name)
+  int_fields <- union(int_fields1, int_fields2)
+  
+  # FACTOR
+  factor_fields1 <- dd %>%
+    filter(field_type %in% c("radio", "dropdown", "yesno")) %>%
+    pull(field_name)
+  factor_fields2 <- dd %>%
+    filter(!is.na(field_annotation) & str_starts(field_annotation, "@CALCTEXT")) %>%
+    pull(field_name)
+  factor_fields <- union(factor_fields1, factor_fields2)
+  factor_fields <- setdiff(factor_fields, date_fields2)  # Remove @CALCTEXT where that should be a date
+  
+  # CHARACTER
+  text_fields <- dd %>%
+    filter(field_type %in% c("text", "notes")) %>%
+    pull(field_name)
+  
+  # Remove any fields that have been allocated to another conversion group
+  other_fields <- union(factor_fields, union(date_fields, union(datetime_fields, union(num_fields, int_fields))))
+  text_fields <- setdiff(text_fields, other_fields)
+  
+  # Only convert columns that are present in the dataset using any_of()
+  data <- data %>%
+    mutate(across(any_of(factor_fields), as.factor)) %>%
+    mutate(across(any_of(text_fields), as.character)) %>% 
+    mutate(across(any_of(date_fields), as.Date)) %>% 
+    mutate(across(any_of(datetime_fields), as.Date)) %>% 
+    mutate(across(any_of(num_fields), as.numeric)) %>% 
+    mutate(across(any_of(int_fields), as.integer)) %>% 
+    mutate(record_id = as.character(record_id))
+  
+  return(data)
+}
+
+# Apply the conversion function to each dataset using its respective data dictionary
+
+screening_data <- convert_field_types(screening_data, screening_dd)
+household_data <- convert_field_types(household_data, household_dd)
+treatment_data <- convert_field_types(treatment_data, treatment_dd)
