@@ -16,32 +16,33 @@ library(tidyverse)
 library(epikit)
 library(dplyr)
 
-# Load data from .rds files in folders into dataframes ---------------------------
+# Load data from .csv files in folders into dataframes ---------------------------
 
 # Dynamically define report folders by listing subdirectories of "data-raw"
 report_folders <- list.dirs(here("data-raw"), recursive = FALSE, full.names = FALSE)
 
 for (folder in report_folders) {
   
-  # List all .rds files in the folder with a 6-digit datestamp at the end
-  files <- dir(here("data-raw", folder), pattern = "\\d{6}\\.rds$", full.names = TRUE)
+  # List all CSV files in the folder
+  files <- dir(here("data-raw", folder), pattern = "\\.csv$", full.names = TRUE)
+  
   if (length(files) == 0) {
     warning("No files found in folder: ", folder)
     next
   }
   
-  # Extract the datestamp from each file name, assumes the file name ends with _yymmdd.rds
-  date_strings <- str_extract(basename(files), "(?<=_)[0-9]{6}(?=\\.rds$)")
+  # Extract the datetime from each file name, assumes numbers in descending format
+  datetime_strings <- str_extract(basename(files), "[0-9].*[0-9]")
   
-  # Convert these strings to Date objects using the format "%y%m%d"
-  dates <- as.Date(date_strings, format = "%y%m%d")
+  # Convert these strings to Datetime objects using 
+  datetimes <- lubridate::ymd_hm(datetime_strings)
   
   # Identify the file with the most recent date
-  latest_index <- which.max(dates)
+  latest_index <- which.max(datetimes)
   latest_file <- files[latest_index]
   
-  # Read the .rds file into a data frame
-  df <- readRDS(latest_file)
+  # Read the .csv file into a data frame
+  df <- read_csv(latest_file)
   
   # Create variable names and assign dataframe
   var_name <- paste0(folder, "_data")
