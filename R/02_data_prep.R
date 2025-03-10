@@ -242,4 +242,15 @@ household_data <- household_data %>%
   mutate(week_enum = floor_date(hh_date, unit = "week", week_start = 1)) %>%  
   mutate(week_enum = if_else(week_enum > max_week, NA_Date_, week_enum))
 
+# EA numbers removing any text
+
+screening_data <- screening_data %>% 
+  mutate(ea_id = str_sub(ea_number, 1, 8))
+
+household_data <- household_data %>% 
+  mutate(hh_ea_id = str_sub(hh_ea, 1, 8))
+
+treatment_data <- treatment_data %>% 
+  mutate(tpt_ea_id = str_sub(tpt_ea, 1, 8))
+
 
