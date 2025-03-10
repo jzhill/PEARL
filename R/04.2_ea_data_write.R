@@ -82,9 +82,25 @@ hh_enum <- household_data %>%
   summarise(hh_enum_new = n(), .groups = "drop") %>%
   rename(record_id = hh_ea_id)
 
-ea_pivot <- reduce(list(reg, reg_m, reg_f, pop_all, pop_current, pop_elig, pop_reg_enum, hh_enum), full_join, by = "record_id")
+# Date from enumeration data: EA first enumerated
+hh_date <- household_data %>%
+  filter(!is.na(hh_ea_id) & hh_ea_id != "") %>%
+  group_by(hh_ea_id) %>%
+  summarise(date_enum_new = min(hh_date, na.rm = TRUE), .groups = "drop") %>%
+  rename(record_id = hh_ea_id)
+
+# Date from screening data: EA first person registered
+reg_date <- screening_data %>%
+  filter(!is.na(ea_id) & ea_id != "") %>%
+  group_by(ea_id) %>%
+  summarise(date_screen_new = min(en_date_visit, na.rm = TRUE), .groups = "drop") %>%
+  rename(record_id = ea_id)
+
+ea_pivot <- reduce(list(reg, reg_m, reg_f, pop_all, pop_current, pop_elig, pop_reg_enum, hh_enum, hh_date, reg_date), full_join, by = "record_id")
 
 ea_data <- ea_data %>%
+  select(-any_of(c("pop_reg_screen_new", "pop_reg_screen_m_new", "pop_reg_screen_f_new",
+                   "pop_all_new", "pop_current_new", "pop_elig_new", "pop_reg_enum_new", "hh_enum_new", "date_enum_new", "date_screen_new"))) %>%
   left_join(ea_pivot, by = "record_id")
 
 ## Optionally write pivoted data to EA project ------------------------------
@@ -107,7 +123,9 @@ if (interactive()) {
            pop_current = pop_current_new,
            pop_elig = pop_elig_new,
            pop_reg_enum = pop_reg_enum_new,
-           hh_enum = hh_enum_new)
+           hh_enum = hh_enum_new,
+           date_enum = date_enum_new,
+           date_screen = date_screen_new)
   
   result <- REDCapR::redcap_write(
     ea_pivot,

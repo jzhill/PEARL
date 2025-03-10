@@ -42,11 +42,8 @@ hh_tbdec_pivot <- screening_data %>%
 hh_pivot <- full_join(hh_reg_pivot, hh_tbdec_pivot, by = "record_id")
 
 household_data <- household_data %>%
+  select(-any_of(c("hh_reg_new", "hh_tbdec_new"))) %>% 
   left_join(hh_pivot, by = "record_id")
-
-hh_pivot <- hh_pivot %>%
-  rename(hh_reg = hh_reg_new,
-         hh_tbdec = hh_tbdec_new)
 
 ## Optionally write pivoted data to household project ------------------------------
 
