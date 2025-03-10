@@ -214,7 +214,7 @@ household_data <- convert_field_types(household_data, household_dd)
 treatment_data <- convert_field_types(treatment_data, treatment_dd)
 ea_data <- convert_field_types(ea_data, ea_dd)
 
-## Additional data prep steps -------------------------
+## Data preparation steps -------------------------
 
 # Age category
 
@@ -253,4 +253,24 @@ household_data <- household_data %>%
 treatment_data <- treatment_data %>% 
   mutate(tpt_ea_id = str_sub(tpt_ea, 1, 8))
 
+# Join village from EA database to household 
+
+household_data <- household_data %>%
+  left_join(
+    ea_data %>% select(record_id, village),
+    by = c("hh_ea_id" = "record_id")
+  ) %>%
+  rename(hh_village_ea = village)
+
+# Join village and EA from household database for comparison with captured data
+
+screening_data <- screening_data %>%
+  left_join(
+    household_data %>% select(record_id, hh_ea_id, hh_village_ea),
+    by = c("dwelling_id" = "record_id")
+  ) %>%
+  rename(
+    ea_number_hh = hh_ea_id,
+    res_village_hh = hh_village_ea
+  )
 
