@@ -53,14 +53,61 @@ for (folder in report_folders) {
 
 ## Load data dictionary CSV files into the environment ----------------------
 
+# Data dictionary column rename map
+
+rename_map <- c(
+  "Variable / Field Name" = "field_name",
+  "Form Name" = "form_name",
+  "Section Header" = "section_header",
+  "Field Type" = "field_type",
+  "Field Label" = "field_label",
+  "Choices, Calculations, OR Slider Labels" = "select_choices_or_calculations",
+  "Field Note" = "field_note",
+  "Text Validation Type OR Show Slider Number" = "text_validation_type_or_show_slider_number",
+  "Text Validation Min" = "text_validation_min",
+  "Text Validation Max" = "text_validation_max",
+  "Identifier?" = "identifier",
+  "Branching Logic (Show field only if...)" = "branching_logic",
+  "Required Field?" = "required_field",
+  "Custom Alignment" = "custom_alignment",
+  "Question Number (surveys only)" = "question_number",
+  "Matrix Group Name" = "matrix_group_name",
+  "Matrix Ranking?" = "matrix_ranking",
+  "Field Annotation" = "field_annotation"
+)
+
+# Data dictionary column rename helper function
+
+rename_if_needed <- function(dd) {
+  dd_renamed <- dd %>%
+    rename_with(
+      .fn = ~ rename_map[.x],
+      .cols = intersect(names(dd), names(rename_map))
+    )
+  return(dd_renamed)
+}
+
+# Define a helper function to normalise and strip everything from field_label
+
+normalise_field_label <- function(x) {
+  x %>%
+    gsub("<[^>]+>", "", .) %>%  # Remove HTML tags
+    str_squish() %>%  # Remove extra whitespace
+    str_to_lower() %>%  # Convert to lowercase
+    str_replace_all("[[:punct:]]", "") %>%  # Remove punctuation
+    str_replace_all("\\s+", "")  # Remove remaining spaces
+}
+
+# Load data dictionary for each folder, applying the column rename function for each
+
 for (folder in report_folders) {
   
-  # Build the filename for the data dictionary CSV file (e.g., "screening_dd.csv")
   dd_file_path <- here("data-raw", paste0(folder, "_dd.csv"))
   
   if (file.exists(dd_file_path)) {
-    dd_data <- read_csv(dd_file_path)
-    # Create a variable name for the data dictionary (e.g., screening_dd)
+    dd_data <- read_csv(dd_file_path) %>%
+      rename_if_needed() %>%
+      mutate(field_label_norm = normalise_field_label(field_label))
     dd_var_name <- paste0(folder, "_dd")
     assign(dd_var_name, dd_data, envir = .GlobalEnv)
     message("Loaded data dictionary for ", folder, " from file: ", dd_file_path)
@@ -69,7 +116,36 @@ for (folder in report_folders) {
   }
 }
 
-## Define a function that converts column types based on the data dictionary -----------------------
+## Convert column names based on the data dictionary -------------------------
+
+# Define a helper function to convert column names
+
+rename_columns_using_dd <- function(df, dd) {
+  rename_map <- setNames(dd$field_name, dd$field_label_norm)
+  current_names <- names(df)
+  normalised_current <- normalise_field_label(current_names)
+  new_names <- sapply(seq_along(current_names), function(i) {
+    norm <- normalised_current[i]
+    if (norm %in% names(rename_map)) {
+      rename_map[[norm]]
+    } else {
+      current_names[i]
+    }
+  }, USE.NAMES = FALSE)
+  names(df) <- new_names
+  return(df)
+}
+
+# Apply helper function to each dataset
+
+screening_data <- rename_columns_using_dd(screening_data, screening_dd)
+household_data <- rename_columns_using_dd(household_data, household_dd)
+treatment_data <- rename_columns_using_dd(treatment_data, treatment_dd)
+ea_data <- rename_columns_using_dd(ea_data, ea_dd)
+
+## Convert column types based on the data dictionary -----------------------
+
+# Define a helper function to convert field types
 
 convert_field_types <- function(data, dd) {
   
@@ -136,7 +212,7 @@ convert_field_types <- function(data, dd) {
 screening_data <- convert_field_types(screening_data, screening_dd)
 household_data <- convert_field_types(household_data, household_dd)
 treatment_data <- convert_field_types(treatment_data, treatment_dd)
-# ea_data <- convert_field_types(ea_data, ea_dd)
+ea_data <- convert_field_types(ea_data, ea_dd)
 
 ## Additional data prep steps -------------------------
 
