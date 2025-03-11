@@ -358,3 +358,7 @@ ea_data <- ea_data %>%
                    "date_screen_new"))) %>%
   left_join(ea_pivot, by = "record_id")
 
+## Create proportion columns in EA data, round to 2dp
+
+ea_data <- ea_data %>%
+  mutate(prop_reg = round(ifelse(pop_elig_new == 0, NA, pop_reg_enum_new / pop_elig_new), 2))
