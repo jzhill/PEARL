@@ -52,7 +52,7 @@ for (folder in report_folders) {
   message("Loaded ", var_name, " from file: ", latest_file)
 }
 
-## Load data dictionary CSV files into the environment ----------------------
+# Load data dictionary CSV files into the environment ----------------------
 
 # Data dictionary column rename map
 
@@ -117,7 +117,7 @@ for (folder in report_folders) {
   }
 }
 
-## Convert column names based on the data dictionary -------------------------
+# Convert column names based on the data dictionary -------------------------
 
 # Define a helper function to convert column names
 
@@ -144,7 +144,7 @@ household_data <- rename_columns_using_dd(household_data, household_dd)
 treatment_data <- rename_columns_using_dd(treatment_data, treatment_dd)
 ea_data <- rename_columns_using_dd(ea_data, ea_dd)
 
-## Convert column types based on the data dictionary -----------------------
+# Convert column types based on the data dictionary -----------------------
 
 # Define a helper function to convert field types
 
@@ -215,150 +215,3 @@ household_data <- convert_field_types(household_data, household_dd)
 treatment_data <- convert_field_types(treatment_data, treatment_dd)
 ea_data <- convert_field_types(ea_data, ea_dd)
 
-## Data preparation steps -------------------------
-
-# Age category
-
-screening_data <- screening_data %>%
-  mutate(age_cat = epikit::age_categories(en_cal_age, by = 10, upper = 80))
-
-treatment_data <- treatment_data %>%
-  mutate(age_cat = epikit::age_categories(tpt_age, by = 10, upper = 80))
-
-# Epi weeks
-
-max_week <- floor_date(Sys.Date(), unit = "week", week_start = 1)
-
-screening_data <- screening_data %>%
-  mutate(week_reg = floor_date(en_date_visit, unit = "week", week_start = 1)) %>%
-  mutate(week_reg = if_else(week_reg > max_week, NA_Date_, week_reg))
-
-treatment_data <- treatment_data %>%
-  mutate(week_reg = floor_date(tpt_reg_date, unit = "week", week_start = 1)) %>%  
-  mutate(week_reg = if_else(week_reg > max_week, NA_Date_, week_reg)) %>% 
-  mutate(week_start = floor_date(tpt_start_date, unit = "week", week_start = 1)) %>%  
-  mutate(week_start = if_else(week_start > max_week, NA_Date_, week_start))
-
-household_data <- household_data %>%
-  mutate(week_enum = floor_date(hh_date, unit = "week", week_start = 1)) %>%  
-  mutate(week_enum = if_else(week_enum > max_week, NA_Date_, week_enum))
-
-# EA numbers removing any text
-
-screening_data <- screening_data %>% 
-  mutate(ea_id = str_sub(ea_number, 1, 8))
-
-household_data <- household_data %>% 
-  mutate(hh_ea_id = str_sub(hh_ea, 1, 8))
-
-treatment_data <- treatment_data %>% 
-  mutate(tpt_ea_id = str_sub(tpt_ea, 1, 8))
-
-# Join village from EA database to household 
-
-household_data <- household_data %>%
-  left_join(
-    ea_data %>% select(record_id, village),
-    by = c("hh_ea_id" = "record_id")
-  ) %>%
-  rename(hh_village_ea = village)
-
-# Join village and EA from household database for comparison with captured data
-
-screening_data <- screening_data %>%
-  left_join(
-    household_data %>% select(record_id, hh_ea_id, hh_village_ea),
-    by = c("dwelling_id" = "record_id")
-  ) %>%
-  rename(
-    ea_number_hh = hh_ea_id,
-    res_village_hh = hh_village_ea
-  )
-
-## Pivot with count or sum for each field per household into the household dataset -----------------------------
-
-# Aggregate screening data: count the number of screened individuals per dwelling_id
-hh_pivot_reg <- screening_data %>%
-  filter(!is.na(dwelling_id) & dwelling_id != "") %>%
-  group_by(dwelling_id) %>%
-  summarise(hh_reg_new = n(), .groups = "drop") %>%
-  rename(record_id = dwelling_id)
-
-# Aggregate screening data: count the number of individuals with TB decision per dwelling_id
-hh_pivot_tbdec <- screening_data %>%
-  filter(!is.na(dwelling_id) & dwelling_id != "") %>%
-  filter(!is.na(tb_decision) & tb_decision != "") %>%
-  group_by(dwelling_id) %>%
-  summarise(hh_tbdec_new = n(), .groups = "drop") %>%
-  rename(record_id = dwelling_id)
-
-hh_pivot <- full_join(hh_pivot_reg, hh_pivot_tbdec, by = "record_id")
-
-household_data <- household_data %>%
-  select(-any_of(c("hh_reg_new", "hh_tbdec_new"))) %>% 
-  left_join(hh_pivot, by = "record_id")
-
-
-## Pivot with count or sum for each field per EA into the EA dataset -----------------------------
-
-# Aggregate screening data
-ea_pivot_screen <- screening_data %>%
-  filter(!is.na(ea_id) & ea_id != "") %>%
-  group_by(ea_id) %>%
-  summarise(
-    pop_reg_screen_new = n(),
-    date_screen_new = min(en_date_visit, na.rm = TRUE),
-    .groups = "drop"
-  ) %>%
-  rename(record_id = ea_id)
-
-ea_pivot_screen_mf <- screening_data %>%
-  filter(!is.na(ea_id) & ea_id != "" & en_sex %in% c("M", "F")) %>%
-  mutate(en_sex = tolower(en_sex)) %>%
-  group_by(ea_id, en_sex) %>%
-  summarise(count = n(), .groups = "drop") %>%
-  pivot_wider(names_from = en_sex, values_from = count, names_prefix = "pop_reg_screen_") %>%
-  mutate(
-    pop_reg_screen_m = replace_na(pop_reg_screen_m, 0),
-    pop_reg_screen_f = replace_na(pop_reg_screen_f, 0)
-  ) %>%
-  rename(
-    record_id = ea_id,
-    pop_reg_screen_m_new = pop_reg_screen_m,
-    pop_reg_screen_f_new = pop_reg_screen_f
-  )
-
-# Aggregate household data
-ea_pivot_hh <- household_data %>%
-  filter(!is.na(hh_ea_id) & hh_ea_id != "") %>%
-  group_by(hh_ea_id) %>%
-  summarise(
-    pop_all_new = sum(hh_all, na.rm = TRUE),
-    pop_current_new = sum(hh_size, na.rm = TRUE),
-    pop_elig_new = sum(hh_size_elig, na.rm = TRUE),
-    pop_reg_enum_new = sum(hh_reg, na.rm = TRUE),
-    hh_enum_new = n(),
-    date_enum_new = min(hh_date, na.rm = TRUE),
-    .groups = "drop"
-  ) %>%
-  rename(record_id = hh_ea_id)
-
-ea_pivot <- reduce(c(list(ea_pivot_screen, ea_pivot_screen_mf, ea_pivot_hh)), full_join, by = "record_id")
-
-ea_data <- ea_data %>%
-  select(-any_of(c("pop_reg_screen_new",
-                   "pop_reg_screen_m_new",
-                   "pop_reg_screen_f_new",
-                   "pop_all_new",
-                   "pop_current_new",
-                   "pop_elig_new",
-                   "pop_reg_enum_new",
-                   "hh_enum_new",
-                   "date_enum_new",
-                   "date_screen_new"))) %>%
-  left_join(ea_pivot, by = "record_id")
-
-## Create proportion columns in EA data, round to 2dp
-
-ea_data <- ea_data %>%
-  mutate(prop_reg = round(ifelse(pop_elig_new == 0, NA, pop_reg_enum_new / pop_elig_new), 2))
