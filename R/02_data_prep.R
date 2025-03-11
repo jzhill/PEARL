@@ -15,6 +15,7 @@ library(lubridate)
 library(tidyverse)
 library(epikit)
 library(dplyr)
+library(purrr)
 
 # Load data from .csv files in folders into dataframes ---------------------------
 
@@ -273,4 +274,87 @@ screening_data <- screening_data %>%
     ea_number_hh = hh_ea_id,
     res_village_hh = hh_village_ea
   )
+
+## Pivot with count or sum for each field per household into the household dataset -----------------------------
+
+# Aggregate screening data: count the number of screened individuals per dwelling_id
+hh_pivot_reg <- screening_data %>%
+  filter(!is.na(dwelling_id) & dwelling_id != "") %>%
+  group_by(dwelling_id) %>%
+  summarise(hh_reg_new = n(), .groups = "drop") %>%
+  rename(record_id = dwelling_id)
+
+# Aggregate screening data: count the number of individuals with TB decision per dwelling_id
+hh_pivot_tbdec <- screening_data %>%
+  filter(!is.na(dwelling_id) & dwelling_id != "") %>%
+  filter(!is.na(tb_decision) & tb_decision != "") %>%
+  group_by(dwelling_id) %>%
+  summarise(hh_tbdec_new = n(), .groups = "drop") %>%
+  rename(record_id = dwelling_id)
+
+hh_pivot <- full_join(hh_pivot_reg, hh_pivot_tbdec, by = "record_id")
+
+household_data <- household_data %>%
+  select(-any_of(c("hh_reg_new", "hh_tbdec_new"))) %>% 
+  left_join(hh_pivot, by = "record_id")
+
+
+## Pivot with count or sum for each field per EA into the EA dataset -----------------------------
+
+# Aggregate screening data
+ea_pivot_screen <- screening_data %>%
+  filter(!is.na(ea_id) & ea_id != "") %>%
+  group_by(ea_id) %>%
+  summarise(
+    pop_reg_screen_new = n(),
+    date_screen_new = min(en_date_visit, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  rename(record_id = ea_id)
+
+ea_pivot_screen_mf <- screening_data %>%
+  filter(!is.na(ea_id) & ea_id != "" & en_sex %in% c("M", "F")) %>%
+  mutate(en_sex = tolower(en_sex)) %>%
+  group_by(ea_id, en_sex) %>%
+  summarise(count = n(), .groups = "drop") %>%
+  pivot_wider(names_from = en_sex, values_from = count, names_prefix = "pop_reg_screen_") %>%
+  mutate(
+    pop_reg_screen_m = replace_na(pop_reg_screen_m, 0),
+    pop_reg_screen_f = replace_na(pop_reg_screen_f, 0)
+  ) %>%
+  rename(
+    record_id = ea_id,
+    pop_reg_screen_m_new = pop_reg_screen_m,
+    pop_reg_screen_f_new = pop_reg_screen_f
+  )
+
+# Aggregate household data
+ea_pivot_hh <- household_data %>%
+  filter(!is.na(hh_ea_id) & hh_ea_id != "") %>%
+  group_by(hh_ea_id) %>%
+  summarise(
+    pop_all_new = sum(hh_all, na.rm = TRUE),
+    pop_current_new = sum(hh_size, na.rm = TRUE),
+    pop_elig_new = sum(hh_size_elig, na.rm = TRUE),
+    pop_reg_enum_new = sum(hh_reg, na.rm = TRUE),
+    hh_enum_new = n(),
+    date_enum_new = min(hh_date, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  rename(record_id = hh_ea_id)
+
+ea_pivot <- reduce(c(list(ea_pivot_screen, ea_pivot_screen_mf, ea_pivot_hh)), full_join, by = "record_id")
+
+ea_data <- ea_data %>%
+  select(-any_of(c("pop_reg_screen_new",
+                   "pop_reg_screen_m_new",
+                   "pop_reg_screen_f_new",
+                   "pop_all_new",
+                   "pop_current_new",
+                   "pop_elig_new",
+                   "pop_reg_enum_new",
+                   "hh_enum_new",
+                   "date_enum_new",
+                   "date_screen_new"))) %>%
+  left_join(ea_pivot, by = "record_id")
 

@@ -17,33 +17,26 @@ library(purrr)
 # Parameters ------------------------------------
 
 uri <- "https://redcap.sydney.edu.au/api/"
-token_screen <- Sys.getenv("RCAPI_PEARL_screen")
-token_hh <- Sys.getenv("RCAPI_PEARL_hh")
-token_treat <- Sys.getenv("RCAPI_PEARL_treat")
 token_ea <- Sys.getenv("RCAPI_PEARL_ea")
 
 ## Pivot with count or sum for each field per household -----------------------------
 
 # Aggregate screening data: count the number of screened individuals per dwelling_id
-hh_reg_pivot <- screening_data %>%
+hh_pivot_ul_reg <- screening_data %>%
   filter(!is.na(dwelling_id) & dwelling_id != "") %>%
   group_by(dwelling_id) %>%
-  summarise(hh_reg_new = n(), .groups = "drop") %>%
+  summarise(hh_reg = n(), .groups = "drop") %>%
   rename(record_id = dwelling_id)
 
 # Aggregate screening data: count the number of individuals with TB decision per dwelling_id
-hh_tbdec_pivot <- screening_data %>%
+hh_pivot_ul_tbdec <- screening_data %>%
   filter(!is.na(dwelling_id) & dwelling_id != "") %>%
   filter(!is.na(tb_decision) & tb_decision != "") %>%
   group_by(dwelling_id) %>%
-  summarise(hh_tbdec_new = n(), .groups = "drop") %>%
+  summarise(hh_tbdec = n(), .groups = "drop") %>%
   rename(record_id = dwelling_id)
 
-hh_pivot <- full_join(hh_reg_pivot, hh_tbdec_pivot, by = "record_id")
-
-household_data <- household_data %>%
-  select(-any_of(c("hh_reg_new", "hh_tbdec_new"))) %>% 
-  left_join(hh_pivot, by = "record_id")
+hh_pivot_ul <- full_join(hh_pivot_ul_reg, hh_pivot_ul_tbdec, by = "record_id")
 
 ## Optionally write pivoted data to household project ------------------------------
 
@@ -57,12 +50,8 @@ if (interactive()) {
   if (choice == 1) {
     message("Writing data to REDCap...")
     
-    hh_pivot <- hh_pivot %>%
-      rename(hh_reg = hh_reg_new,
-             hh_tbdec = hh_tbdec_new)
-    
     result <- REDCapR::redcap_write(
-      hh_pivot,
+      hh_pivot_ul,
       redcap_uri = uri,
       token = token_hh,
       overwrite_with_blanks = TRUE,

@@ -17,91 +17,49 @@ library(purrr)
 # Parameters ------------------------------
 
 uri <- "https://redcap.sydney.edu.au/api/"
-token_screen <- Sys.getenv("RCAPI_PEARL_screen")
-token_hh <- Sys.getenv("RCAPI_PEARL_hh")
-token_treat <- Sys.getenv("RCAPI_PEARL_treat")
 token_ea <- Sys.getenv("RCAPI_PEARL_ea")
 
 ## Pivot with count or sum for each field per EA -----------------------------
 
-# Aggregate screening data: count the number of registered individuals per EA
-reg <- screening_data %>%
+# Aggregate screening data
+ea_pivot_ul_screen <- screening_data %>%
   filter(!is.na(ea_id) & ea_id != "") %>%
   group_by(ea_id) %>%
-  summarise(pop_reg_screen_new = n(), .groups = "drop") %>%
+  summarise(
+    pop_reg_screen = n(),
+    date_screen = min(en_date_visit, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
   rename(record_id = ea_id)
 
-# Aggregate screening data: count the number of registered males per EA
-reg_m <- screening_data %>%
-  filter(!is.na(ea_id) & ea_id != "") %>%
-  filter(en_sex == "M") %>%
-  group_by(ea_id) %>%
-  summarise(pop_reg_screen_m_new = n(), .groups = "drop") %>%
+ea_pivot_ul_screen_mf <- screening_data %>%
+  filter(!is.na(ea_id) & ea_id != "" & en_sex %in% c("M", "F")) %>%
+  mutate(en_sex = tolower(en_sex)) %>%
+  group_by(ea_id, en_sex) %>%
+  summarise(count = n(), .groups = "drop") %>%
+  pivot_wider(names_from = en_sex, values_from = count, names_prefix = "pop_reg_screen_") %>%
+  mutate(
+    pop_reg_screen_m = replace_na(pop_reg_screen_m, 0),
+    pop_reg_screen_f = replace_na(pop_reg_screen_f, 0)
+  ) %>%
   rename(record_id = ea_id)
 
-# Aggregate screening data: count the number of registered females per EA
-reg_f <- screening_data %>%
-  filter(!is.na(ea_id) & ea_id != "") %>%
-  filter(en_sex == "F") %>%
-  group_by(ea_id) %>%
-  summarise(pop_reg_screen_f_new = n(), .groups = "drop") %>%
-  rename(record_id = ea_id)
-
-# Aggregate enumeration data: population belonging to households
-pop_all <- household_data %>%
+# Aggregate household data
+ea_pivot_ul_hh <- household_data %>%
   filter(!is.na(hh_ea_id) & hh_ea_id != "") %>%
   group_by(hh_ea_id) %>%
-  summarise(pop_all_new = sum(hh_all, na.rm = TRUE), .groups = "drop") %>%
+  summarise(
+    pop_all = sum(hh_all, na.rm = TRUE),
+    pop_current = sum(hh_size, na.rm = TRUE),
+    pop_elig = sum(hh_size_elig, na.rm = TRUE),
+    pop_reg_enum = sum(hh_reg, na.rm = TRUE),
+    hh_enum = n(),
+    date_enum = min(hh_date, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
   rename(record_id = hh_ea_id)
 
-# Aggregate enumeration data: population currently resident
-pop_current <- household_data %>%
-  filter(!is.na(hh_ea_id) & hh_ea_id != "") %>%
-  group_by(hh_ea_id) %>%
-  summarise(pop_current_new = sum(hh_size, na.rm = TRUE), .groups = "drop") %>%
-  rename(record_id = hh_ea_id)
-
-# Aggregate enumeration data: population eligible
-pop_elig <- household_data %>%
-  filter(!is.na(hh_ea_id) & hh_ea_id != "") %>%
-  group_by(hh_ea_id) %>%
-  summarise(pop_elig_new = sum(hh_size_elig, na.rm = TRUE), .groups = "drop") %>%
-  rename(record_id = hh_ea_id)
-
-# Aggregate enumeration data: population eligible
-pop_reg_enum <- household_data %>%
-  filter(!is.na(hh_ea_id) & hh_ea_id != "") %>%
-  group_by(hh_ea_id) %>%
-  summarise(pop_reg_enum_new = sum(hh_reg, na.rm = TRUE), .groups = "drop") %>%
-  rename(record_id = hh_ea_id)
-
-# Aggregate enumeration data: households enumerated
-hh_enum <- household_data %>%
-  filter(!is.na(hh_ea_id) & hh_ea_id != "") %>%
-  group_by(hh_ea_id) %>%
-  summarise(hh_enum_new = n(), .groups = "drop") %>%
-  rename(record_id = hh_ea_id)
-
-# Date from enumeration data: EA first enumerated
-hh_date <- household_data %>%
-  filter(!is.na(hh_ea_id) & hh_ea_id != "") %>%
-  group_by(hh_ea_id) %>%
-  summarise(date_enum_new = min(hh_date, na.rm = TRUE), .groups = "drop") %>%
-  rename(record_id = hh_ea_id)
-
-# Date from screening data: EA first person registered
-reg_date <- screening_data %>%
-  filter(!is.na(ea_id) & ea_id != "") %>%
-  group_by(ea_id) %>%
-  summarise(date_screen_new = min(en_date_visit, na.rm = TRUE), .groups = "drop") %>%
-  rename(record_id = ea_id)
-
-ea_pivot <- reduce(list(reg, reg_m, reg_f, pop_all, pop_current, pop_elig, pop_reg_enum, hh_enum, hh_date, reg_date), full_join, by = "record_id")
-
-ea_data <- ea_data %>%
-  select(-any_of(c("pop_reg_screen_new", "pop_reg_screen_m_new", "pop_reg_screen_f_new",
-                   "pop_all_new", "pop_current_new", "pop_elig_new", "pop_reg_enum_new", "hh_enum_new", "date_enum_new", "date_screen_new"))) %>%
-  left_join(ea_pivot, by = "record_id")
+ea_pivot_ul <- reduce(c(list(ea_pivot_ul_screen, ea_pivot_ul_screen_mf, ea_pivot_ul_hh)), full_join, by = "record_id")
 
 ## Optionally write pivoted data to EA project ------------------------------
 
@@ -115,20 +73,8 @@ if (interactive()) {
   if (choice == 1) {
     message("Writing data to REDCap...")
 
-    ea_pivot <- ea_pivot %>%
-    rename(pop_reg_screen = pop_reg_screen_new,
-           pop_reg_screen_m = pop_reg_screen_m_new,
-           pop_reg_screen_f = pop_reg_screen_f_new,
-           pop_all = pop_all_new,
-           pop_current = pop_current_new,
-           pop_elig = pop_elig_new,
-           pop_reg_enum = pop_reg_enum_new,
-           hh_enum = hh_enum_new,
-           date_enum = date_enum_new,
-           date_screen = date_screen_new)
-  
   result <- REDCapR::redcap_write(
-    ea_pivot,
+    ea_pivot_ul,
     redcap_uri = uri,
     token = token_ea,
     overwrite_with_blanks = TRUE,
