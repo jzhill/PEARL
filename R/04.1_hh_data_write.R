@@ -17,9 +17,9 @@ library(purrr)
 # Parameters ------------------------------------
 
 uri <- "https://redcap.sydney.edu.au/api/"
-token_ea <- Sys.getenv("RCAPI_PEARL_ea")
+token_hh <- Sys.getenv("RCAPI_PEARL_hh")
 
-## Pivot with count or sum for each field per household -----------------------------
+# Pivot with count or sum for each field per household -----------------------------
 
 # Aggregate screening data: count the number of screened individuals per dwelling_id
 hh_pivot_ul_reg <- screening_data %>%
@@ -38,7 +38,7 @@ hh_pivot_ul_tbdec <- screening_data %>%
 
 hh_pivot_ul <- full_join(hh_pivot_ul_reg, hh_pivot_ul_tbdec, by = "record_id")
 
-## Optionally write pivoted data to household project ------------------------------
+# Optionally write pivoted data to household project ------------------------------
 
 # Validate that the hh_pivot can be written
 REDCapR::validate_for_write(hh_pivot)
