@@ -23,6 +23,10 @@ library(purrr)
 screening_data <- screening_data %>%
   mutate(tst_read_bin = ifelse(!is.na(tst_read_mm) | !is.na(tst_read_positive), TRUE, FALSE))
 
+# Create helper column for TB outcome
+screening_data <- screening_data %>%
+  mutate(tbdec_bin = ifelse(!is.na(tb_decision), TRUE, FALSE))
+
 # Age category in 10 year groups -------------------------------
 
 screening_data <- screening_data %>%
@@ -173,45 +177,57 @@ ea_data <- ea_data %>%
 ea_data <- ea_data %>%
   mutate(prop_reg = round(ifelse(pop_elig_new == 0, NA, pop_reg_enum_new / pop_elig_new), 2))
 
-# Daily data aggregation columns -------------------------------------
+## Weekly Aggregation ------------------------------------------------------
 
-## Initial daily data with n reg --------------------------------
-
-# Get the date range and fill
-start_date <- min(screening_data$en_date_visit, na.rm = TRUE)
-end_date <- Sys.Date()
-full_dates <- tibble(en_date_visit = seq.Date(start_date, end_date, by = "day"))
-
-# Aggregate screening counts by day
-daily_counts <- screening_data %>%
-  group_by(en_date_visit) %>%
-  summarise(reg = n(), .groups = "drop")
-
-# Aggregate TST successfully placed counts by day
-tst_counts <- screening_data %>%
-  filter(tst_success == "Yes") %>%
-  group_by(en_date_visit) %>%
-  summarise(tst_placed = n(), .groups = "drop")
-
-# Aggregate TST successfully read counts by day
-tst_read_counts <- screening_data %>%
-  filter(tst_read_bin == TRUE) %>%
-  group_by(en_date_visit) %>%
-  summarise(tst_read = n(), .groups = "drop")
-
-# Merge with the full date sequence and fill missing days with 0 counts
-daily_data <- full_dates %>%
-  left_join(daily_counts, by = "en_date_visit") %>%
-  left_join(tst_counts, by = "en_date_visit") %>%
-  left_join(tst_read_counts, by = "en_date_visit") %>%
-  replace_na(list(n = 0))
-
-# Create additional time groupings
-daily_data <- daily_data %>%
+# Aggregate all required counts at the weekly level
+weekly_data <- screening_data %>%
   mutate(
-    week = lubridate::floor_date(en_date_visit, "week"),
-    month = lubridate::floor_date(en_date_visit, "month"),
-    quarter = lubridate::floor_date(en_date_visit, "quarter"),
-    year = lubridate::floor_date(en_date_visit, "year")
+    tst_placed = ifelse(tst_success == "Yes", 1, 0),
+    tst_read = ifelse(tst_read_bin == TRUE, 1, 0),
+    tbdec = ifelse(tbdec_bin == TRUE, 1, 0),
+    sdr = ifelse(calc_sdr == "Given", 1, 0)
+  ) %>%
+  group_by(week_reg) %>%
+  summarise(
+    reg = n(),
+    tst_placed = sum(tst_placed, na.rm = TRUE),
+    tst_read = sum(tst_read, na.rm = TRUE),
+    tbdec = sum(tbdec, na.rm = TRUE),
+    sdr = sum(sdr, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  complete(week_reg = seq.Date(
+    from = min(screening_data$week_reg, na.rm = TRUE),
+    to = max(screening_data$week_reg, na.rm = TRUE),
+    by = "week"
+  ), fill = list(reg = 0, tst_placed = 0, tst_read = 0, tbdec = 0, sdr = 0)) %>%
+  mutate(
+    month = lubridate::floor_date(week_reg, "month"),
+    quarter = lubridate::floor_date(week_reg, "quarter"),
+    year = lubridate::floor_date(week_reg, "year")
   )
 
+# Aggregate Presumptive TB counts by week_reg, ensuring factor labels are retained
+tb_decision_counts <- screening_data %>%
+  mutate(
+    tb_decision = as.character(tb_decision),  # Convert factor to character to retain labels
+    tb_decision = ifelse(is.na(tb_decision), "Missing", tb_decision) # Label NA as "Missing"
+  ) %>%
+  count(week_reg, tb_decision) %>%
+  pivot_wider(names_from = tb_decision, values_from = n, values_fill = list(n = 0)) %>%
+  rename_with(~paste0("tbdec_", make.names(.)), -week_reg) # Ensure column names are readable
+
+# Aggregate TST Read Positive counts by week_reg, ensuring factor labels are retained
+tst_read_positive_counts <- screening_data %>%
+  mutate(
+    tst_read_positive = as.character(tst_read_positive), # Convert factor to character to retain labels
+    tst_read_positive = ifelse(is.na(tst_read_positive), "Missing", tst_read_positive) # Label NA as "Missing"
+  ) %>%
+  count(week_reg, tst_read_positive) %>%
+  pivot_wider(names_from = tst_read_positive, values_from = n, values_fill = list(n = 0)) %>%
+  rename_with(~paste0("tst_", make.names(.)), -week_reg) # Ensure column names are readable
+
+# Merge with existing weekly_data
+weekly_data <- weekly_data %>%
+  left_join(tb_decision_counts, by = "week_reg") %>%
+  left_join(tst_read_positive_counts, by = "week_reg")
