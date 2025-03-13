@@ -8,14 +8,17 @@ ui <- fluidPage(
   fluidRow(
     column(4, wellPanel(
       selectInput("time_agg", "Select Time Aggregation:",
-                  choices = c("Daily" = "day", "Weekly" = "week", "Monthly" = "month", 
+                  choices = c("Weekly" = "week", "Monthly" = "month", 
                               "Quarterly" = "quarter", "Yearly" = "year"),
-                  selected = "day"),
+                  selected = "week"),
       dateRangeInput("date_range", "Select Date Range:"),
       checkboxGroupInput("indicators", "Select Indicators:",
                          choices = c("Total Registrations" = "reg", 
                                      "TST Placed" = "tst_placed", 
-                                     "TST Read" = "tst_read"),
+                                     "TST Read" = "tst_read", 
+                                     "TST Read as % of TST Placed" = "tst_read_pct",
+                                     "TB Decision as % of Registrations" = "tbdec_pct",
+                                     "SDR Given as % of Registrations" = "sdr_pct"),
                          selected = "reg")
     ))
   ),
@@ -25,25 +28,40 @@ ui <- fluidPage(
 )
 
 server <- function(input, output, session) {
-  req(daily_data)
+  req(weekly_data)
   
   observe({
     updateDateRangeInput(session, "date_range", 
-                         start = min(daily_data$en_date_visit, na.rm = TRUE),
-                         end = max(daily_data$en_date_visit, na.rm = TRUE),
-                         min = min(daily_data$en_date_visit, na.rm = TRUE),
-                         max = max(daily_data$en_date_visit, na.rm = TRUE))
+                         start = min(weekly_data$week_reg, na.rm = TRUE),
+                         end = max(weekly_data$week_reg, na.rm = TRUE),
+                         min = min(weekly_data$week_reg, na.rm = TRUE),
+                         max = max(weekly_data$week_reg, na.rm = TRUE))
   })
   
   filtered_data <- reactive({
     req(input$indicators)
-    daily_data %>%
-      filter(en_date_visit >= input$date_range[1] & en_date_visit <= input$date_range[2]) %>%
-      mutate(time_group = floor_date(en_date_visit, input$time_agg)) %>%
+    
+    df <- weekly_data %>%
+      filter(week_reg >= input$date_range[1] & week_reg <= input$date_range[2]) %>%
+      mutate(time_group = case_when(
+        input$time_agg == "week" ~ week_reg,
+        input$time_agg == "month" ~ floor_date(week_reg, "month"),
+        input$time_agg == "quarter" ~ floor_date(week_reg, "quarter"),
+        input$time_agg == "year" ~ floor_date(week_reg, "year"),
+        TRUE ~ week_reg  # Default to weekly if input is invalid
+      )) %>%
       group_by(time_group) %>%
-      summarise(across(all_of(input$indicators), ~sum(replace_na(.x, 0))), .groups = "drop") %>%
+      summarise(
+        across(all_of(setdiff(input$indicators, c("tst_read_pct", "tbdec_pct", "sdr_pct"))), ~sum(replace_na(.x, 0))),
+        tst_read_pct = if("tst_read_pct" %in% input$indicators) ifelse(sum(tst_placed, na.rm = TRUE) > 0, sum(tst_read, na.rm = TRUE) / sum(tst_placed, na.rm = TRUE) * 100, NA_real_) else NA_real_,
+        tbdec_pct = if("tbdec_pct" %in% input$indicators) ifelse(sum(reg, na.rm = TRUE) > 0, sum(tbdec, na.rm = TRUE) / sum(reg, na.rm = TRUE) * 100, NA_real_) else NA_real_,
+        sdr_pct = if("sdr_pct" %in% input$indicators) ifelse(sum(reg, na.rm = TRUE) > 0, sum(sdr, na.rm = TRUE) / sum(reg, na.rm = TRUE) * 100, NA_real_) else NA_real_,
+        .groups = "drop"
+      )
+    
+    df %>%
       pivot_longer(-time_group, names_to = "Indicator", values_to = "Value") %>%
-      filter(Value > 0)  # Remove zero-value indicators to avoid plotting issues
+      filter(!is.na(Value)) 
   })
   
   output$time_plot <- renderPlot({
@@ -55,7 +73,7 @@ server <- function(input, output, session) {
       scale_x_date(date_breaks = "1 month", date_labels = "%b %Y") +
       theme_minimal() +
       theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-      labs(title = "Aggregated Time Series Data", x = "Time", y = "Count")
+      labs(title = "Aggregated Time Series Data", x = "Time", y = "Count or Percentage")
   })
 }
 
