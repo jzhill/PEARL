@@ -1,0 +1,66 @@
+---
+title: "PEARL Weekly Situation Report"
+author: "National Tuberculosis Program, Kiribati"
+date: "`r Sys.Date()`"
+format:
+  html:
+    toc: true  # Table of contents
+    number-sections: true
+  pdf:
+    toc: true
+    number-sections: true
+execute:
+  echo: true
+  message: false
+  warning: false
+---
+
+# Load Data
+
+```{r}
+#| label: Load data
+
+# Load necessary libraries
+library(here)
+
+# Source scripts for data loading and tidying
+source(here("R", "02_load_data.R"))
+source(here("R", "03_tidy_data.R"))
+source(here("R", "05.01_weekly_participation.R"))
+source(here("R", "05.04_village_cumulative_prop.R"))
+source(here("R", "06.01_summary.R"))
+```
+
+# Activity This Week
+
+## Summary Table
+
+```{r}
+#| label: Summary flextable
+print(table_06.01)
+```
+
+# Screening Progress
+
+## Weekly activities over time
+
+## Cumulative screening enrollment and coverage by village
+
+## Coverage progress by village
+
+```{r}
+#| label: Village cumulative prop plot
+print(plot_05.04)
+```
+
+# TB Preventive Treatment
+
+*TBD*
+
+# Linkage to Care
+
+*TBD*
+
+# Plan for Next Week
+
+*TBD*
