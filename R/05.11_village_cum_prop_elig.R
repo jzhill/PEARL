@@ -2,7 +2,8 @@ library(tidyverse)
 library(lubridate)
 library(ggplot2)
 
-# Note: this is based on 2020 census population data - just an estimate
+# Note: only villages that have been completed will have valid eligible population data
+# Ignore any villages in the figure that have NOT been completely enumerated
 
 # Include only villages with >= 100 people registered
 village_data_cum_gte_100 <- village_data_cum %>%
@@ -16,13 +17,13 @@ min_date <- floor_date(min(village_data_cum_gte_100$week_reg, na.rm = TRUE), uni
 max_date <- floor_date(max(village_data_cum_gte_100$week_reg, na.rm = TRUE), unit = "month") + months(1)
 
 # Plot cumulative proportion by week on a single panel
-plot_05.04 <- ggplot(village_data_cum_gte_100, aes(x = week_reg, y = cum_prop, color = village)) + # cum_prop in this line
+plot_05.11 <- ggplot(village_data_cum_gte_100, aes(x = week_reg, y = cum_prop_elig, color = village)) + # cum_prop_elig on this line
   geom_line(size = 1) +
   geom_point(size = 2) +
   labs(x = "Registration Week",
        y = "Cumulative Proportion Screened",
        title = "Cumulative Proportion of Village Population Screened Over Time",
-       subtitle = "Denominator: 2020 population",
+       subtitle = "Denominator: eligible population",
        color = "Village") +
   scale_x_date(
     breaks = seq(from = min_date, to = max_date, by = "month")
@@ -35,4 +36,4 @@ plot_05.04 <- ggplot(village_data_cum_gte_100, aes(x = week_reg, y = cum_prop, c
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
-plot_05.04
+plot_05.11
