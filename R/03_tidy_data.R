@@ -345,3 +345,22 @@ village_order_cum <- village_data_cum %>%
 # Convert village to a factor with levels in order of first reached
 village_data_cum <- village_data_cum %>%
   mutate(village = factor(village, levels = village_order_cum))
+
+# GIS data tidy -------------------------
+
+## Join EA data to EA layer -------------------------------
+
+# Ensure both columns have the same type for joining
+layer_ki_ea_3832$ea_2020 <- as.character(layer_ki_ea_3832$ea_2020)
+ea_data$record_id <- as.character(ea_data$record_id)
+
+# Remove previously joined columns, then join
+layer_ki_ea_3832 <- layer_ki_ea_3832 %>%
+  select(-starts_with("joined_"), everything()) %>%  # Remove previous joins
+  left_join(ea_data, by = c("ea_2020" = "record_id")) %>%  # Perform join
+  rename_with(~ paste0("joined_", .), .cols = any_of(setdiff(names(ea_data), "record_id")))  # Rename only newly added columns
+
+# Filter to only include EAs with vid of 716
+layer_betio_ea_3832 <- layer_ki_ea_3832 %>%
+  filter(vid == 716)
+

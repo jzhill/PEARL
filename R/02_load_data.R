@@ -1,11 +1,11 @@
-# Title and description --------------------------------------------
+# Title and Description --------------------------------------------
 
 # Loading and preparing PEARL data from data-raw folders
 # Data are owned by University of Sydney and Kiribati MHMS
 
 # Author:           Jeremy Hill
 # Date commenced:   23 Feb 2025
-
+# Last modified:    15 Mar 2025
 
 # Packages -----------------------------------------
 
@@ -13,49 +13,58 @@ library(here)
 library(stringr)
 library(lubridate)
 library(tidyverse)
-library(epikit)
-library(dplyr)
-library(purrr)
+library(sf)
 
-# Load data from .csv files in folders into dataframes ---------------------------
+# Define required data folders explicitly -------------------------
 
-# Dynamically define report folders by listing subdirectories of "data-raw"
-report_folders <- list.dirs(here("data-raw"), recursive = FALSE, full.names = FALSE)
+required_folders <- c(
+  here("data-raw/screening"),
+  here("data-raw/household"),
+  here("data-raw/treatment"),
+  here("data-raw/ea"),
+  here("data-raw/dds") # Data dictionaries folder
+)
 
-for (folder in report_folders) {
-  
-  # List all CSV files in the folder
-  files <- dir(here("data-raw", folder), pattern = "\\.csv$", full.names = TRUE)
-  
-  if (length(files) == 0) {
-    warning("No files found in folder: ", folder)
-    next
+# Ensure all required directories exist; create them if missing
+for (dir in required_folders) {
+  if (!dir.exists(dir)) {
+    dir.create(dir, recursive = TRUE, showWarnings = FALSE)
+    message("Created missing directory: ", dir)
   }
-  
-  # Extract the datetime from each file name, assumes numbers in descending format
-  datetime_strings <- str_extract(basename(files), "[0-9].*[0-9]")
-  
-  # Convert these strings to Datetime objects using 
-  datetimes <- lubridate::ymd_hm(datetime_strings)
-  
-  # Identify the file with the most recent date
-  latest_index <- which.max(datetimes)
-  latest_file <- files[latest_index]
-  
-  # Read the .csv file into a data frame
-  df <- read_csv(latest_file, show_col_types = FALSE)
-  
-  # Create variable names and assign dataframe
-  var_name <- paste0(folder, "_data")
-  assign(var_name, df, envir = .GlobalEnv)
-  
-  message("Loaded ", var_name, " from file: ", latest_file)
 }
 
-# Load data dictionary CSV files into the environment ----------------------
+# Load the most recent CSV file from each required folder -----------------
 
-# Data dictionary column rename map
+load_latest_csv <- function(folder) {
+  files <- dir(folder, pattern = "\\.csv$", full.names = TRUE)
+  
+  if (length(files) == 0) {
+    warning("No CSV files found in folder: ", folder)
+    return(NULL)
+  }
+  
+  # Extract datetime from filenames (assumes YYYY-MM-DD_HHMM format)
+  datetime_strings <- str_extract(basename(files), "[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{4}")
+  datetimes <- lubridate::ymd_hm(datetime_strings)
+  
+  # Identify and load the most recent file
+  latest_file <- files[which.max(datetimes)]
+  df <- read_csv(latest_file, show_col_types = FALSE)
+  
+  message("Loaded data from: ", latest_file)
+  return(df)
+}
 
+# Load datasets into environment ----------------------
+
+screening_data <- load_latest_csv(here("data-raw/screening"))
+household_data <- load_latest_csv(here("data-raw/household"))
+treatment_data <- load_latest_csv(here("data-raw/treatment"))
+ea_data <- load_latest_csv(here("data-raw/ea"))
+
+# Load data dictionaries ----------------------
+
+# Column rename map
 rename_map <- c(
   "Variable / Field Name" = "field_name",
   "Form Name" = "form_name",
@@ -77,20 +86,14 @@ rename_map <- c(
   "Field Annotation" = "field_annotation"
 )
 
-# Data dictionary column rename helper function
-
+# Helper function: Rename columns if needed
 rename_if_needed <- function(dd) {
-  dd_renamed <- dd %>%
-    rename_with(
-      .fn = ~ rename_map[.x],
-      .cols = intersect(names(dd), names(rename_map))
-    )
-  return(dd_renamed)
+  dd %>%
+    rename_with(~ rename_map[.x], .cols = intersect(names(dd), names(rename_map)))
 }
 
-# Define a helper function to normalise and strip everything from field_label
-
-normalise_field_label <- function(x) {
+# Normalize field labels for matching
+normalize_field_label <- function(x) {
   x %>%
     gsub("<[^>]+>", "", .) %>%  # Remove HTML tags
     str_squish() %>%  # Remove extra whitespace
@@ -99,56 +102,60 @@ normalise_field_label <- function(x) {
     str_replace_all("\\s+", "")  # Remove remaining spaces
 }
 
-# Load data dictionary for each folder, applying the column rename function for each
+# Load data dictionaries from data-raw/dds ----------------------
 
-for (folder in report_folders) {
-  
-  dd_file_path <- here("data-raw", paste0(folder, "_dd.csv"))
-  
-  if (file.exists(dd_file_path)) {
-    dd_data <- read_csv(dd_file_path, show_col_types = FALSE) %>%
-      rename_if_needed() %>%
-      mutate(field_label_norm = normalise_field_label(field_label))
-    dd_var_name <- paste0(folder, "_dd")
-    assign(dd_var_name, dd_data, envir = .GlobalEnv)
-    message("Loaded data dictionary for ", folder, " from file: ", dd_file_path)
-  } else {
-    warning("Data dictionary file not found for folder: ", folder)
+load_dd <- function(filename) {
+  filepath <- here("data-raw/dds", filename)
+  if (!file.exists(filepath)) {
+    warning("Data dictionary file not found: ", filename)
+    return(NULL)
   }
+  
+  dd <- read_csv(filepath, show_col_types = FALSE) %>%
+    rename_if_needed() %>%
+    mutate(field_label_norm = normalize_field_label(field_label))
+  
+  message("Loaded data dictionary: ", filename)
+  return(dd)
 }
 
-# Convert column names based on the data dictionary -------------------------
+screening_dd <- load_dd("screening_dd.csv")
+household_dd <- load_dd("household_dd.csv")
+treatment_dd <- load_dd("treatment_dd.csv")
+ea_dd <- load_dd("ea_dd.csv")
 
-# Define a helper function to convert column names
+# Rename columns using the data dictionary ----------------------
 
 rename_columns_using_dd <- function(df, dd) {
+  if (is.null(df) || is.null(dd)) return(df)
+  
   rename_map <- setNames(dd$field_name, dd$field_label_norm)
   current_names <- names(df)
-  normalised_current <- normalise_field_label(current_names)
+  normalized_current <- normalize_field_label(current_names)
+  
   new_names <- sapply(seq_along(current_names), function(i) {
-    norm <- normalised_current[i]
+    norm <- normalized_current[i]
     if (norm %in% names(rename_map)) {
       rename_map[[norm]]
     } else {
       current_names[i]
     }
   }, USE.NAMES = FALSE)
+  
   names(df) <- new_names
   return(df)
 }
 
-# Apply helper function to each dataset
-
+# Apply renaming to datasets
 screening_data <- rename_columns_using_dd(screening_data, screening_dd)
 household_data <- rename_columns_using_dd(household_data, household_dd)
 treatment_data <- rename_columns_using_dd(treatment_data, treatment_dd)
 ea_data <- rename_columns_using_dd(ea_data, ea_dd)
 
-# Convert column types based on the data dictionary -----------------------
-
-# Define a helper function to convert field types
+# Convert column types using data dictionaries ----------------------
 
 convert_field_types <- function(data, dd) {
+  if (is.null(data) || is.null(dd)) return(data)
   
   # DATE
   date_fields1 <- dd %>%
@@ -195,23 +202,45 @@ convert_field_types <- function(data, dd) {
   other_fields <- union(factor_fields, union(date_fields, union(datetime_fields, union(num_fields, int_fields))))
   text_fields <- setdiff(text_fields, other_fields)
   
-  # Only convert columns that are present in the dataset using any_of()
+  # Convert column types
   data <- data %>%
     mutate(across(any_of(factor_fields), as.factor)) %>%
-    mutate(across(any_of(text_fields), as.character)) %>% 
-    mutate(across(any_of(date_fields), as.Date)) %>% 
-    mutate(across(any_of(datetime_fields), as.Date)) %>% 
-    mutate(across(any_of(num_fields), as.numeric)) %>% 
-    mutate(across(any_of(int_fields), as.integer)) %>% 
+    mutate(across(any_of(text_fields), as.character)) %>%
+    mutate(across(any_of(date_fields), as.Date)) %>%
+    mutate(across(any_of(datetime_fields), as.POSIXct)) %>%
+    mutate(across(any_of(num_fields), as.numeric)) %>%
+    mutate(across(any_of(int_fields), as.integer)) %>%
     mutate(record_id = as.character(record_id))
   
   return(data)
 }
 
-# Apply the conversion function to each dataset using its respective data dictionary
-
+# Apply conversions
 screening_data <- convert_field_types(screening_data, screening_dd)
 household_data <- convert_field_types(household_data, household_dd)
 treatment_data <- convert_field_types(treatment_data, treatment_dd)
 ea_data <- convert_field_types(ea_data, ea_dd)
 
+# Load GIS data if present ------------------------------
+
+ki_ea_gis_path <- here("data-raw/gis/KIR_EA_Census2020FINAL.geojson")
+
+if (file.exists(ki_ea_gis_path)) {
+    message("Loading GIS data from: ", ki_ea_gis_path)
+  layer_ki_ea <- st_read(ki_ea_gis_path, quiet = TRUE)
+  
+  if (is.na(st_crs(layer_ki_ea))) {
+    warning("The GIS data has no defined CRS. It may not align properly with other spatial data.")
+  } else if (st_crs(layer_ki_ea)$epsg != 4326) {
+    warning("The CRS is not EPSG:4326. Converting to EPSG:4326 for consistency...")
+    layer_ki_ea <- st_transform(layer_ki_ea, crs = 4326)
+  }
+  
+  # Convert to EPSG:3832 (Kiribati UTM Zone 57S) for better plotting
+  layer_ki_ea_3832 <- st_transform(layer_ki_ea, crs = 3832)
+  
+  message("GIS data successfully loaded and standardized to EPSG:4326 and EPSG:3832.")
+  
+} else {
+  warning("GIS data file not found: ", geojson_path)
+}
