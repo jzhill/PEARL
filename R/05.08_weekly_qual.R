@@ -1,26 +1,93 @@
-library(tidyverse)
 library(ggplot2)
-library(lubridate)
+library(cowplot)
+library(dplyr)
+library(scales)
 
-# Prepare data for plotting
-weekly_summary <- weekly_data %>%
-  pivot_longer(
-    cols = c(reg, tst_placed, tst_read, tbdec, sdr, anyrx, tst_read_pct, tbdec_pct, sdr_pct, anyrx_pct),
-    names_to = "Indicator",
-    values_to = "Value"
-  ) %>%
-  filter(!is.na(Value))  # Remove NAs for cleaner plotting
+# Define important events (adjust dates and labels as needed)
+events_df <- data.frame(
+  week_reg = as.Date(c("2023-03-27",
+                       "2023-08-07",
+                       "2023-10-30",
+                       "2024-04-08",
+                       "2024-10-14",
+                       "2025-01-13")),
+  event_label = c("Commence in Temakin,\nstockout of TPT meds", 
+                  "Lab tech start",
+                  "Stockout of TB meds,\nreplenishment of TPT", 
+                  "Recommence screening\nin Temakin",
+                  "Xpert stockout",
+                  "New staff")
+)
 
-# Create static time series plot
-plot_05.08 <- ggplot(weekly_summary, aes(x = week_reg, y = Value, color = Indicator, group = Indicator)) +
-  geom_line() +
-  geom_point() +
-  scale_x_date(date_breaks = "1 month", date_labels = "%b %Y") +
+# Define proper names for the indicators
+indicator_labels <- c(
+  "anyrx_pct" = "Any Treatment",
+  "tbdec_pct" = "TB Outcome Assigned",
+  "tst_read_pct" = "TST Read",
+  "tst_place_pct" = "TST Placed",
+  "cxr_pct" = "XR Done if Eligible",
+  "xpert_pct" = "Xpert Test Done",
+  "reg" = "People Registered",
+  "tpt_start" = "Started Treatment"
+)
+
+weekly_long_p1 <- weekly_long %>% 
+  filter(!(Indicator %in% c("reg", "tpt_start"))) %>% 
+  mutate(Indicator = recode(Indicator, !!!indicator_labels))
+
+weekly_long_p2 <- weekly_long %>%
+  filter(Indicator %in% c("reg", "tpt_start")) %>%
+  mutate(Indicator = recode(Indicator, !!!indicator_labels))
+
+max_y_p2 <- max(weekly_long_p2$Value, na.rm = TRUE) * 1.25  # Place text slightly above max value
+
+
+p2 <- ggplot(weekly_long_p2, aes(x = week_reg, y = Value, color = Indicator, group = Indicator)) +
+  geom_line(size = 0.5) +
+  scale_y_continuous(name = "Activity count \nReg and TPT start", limits = c(0, max_y_p2)) + 
+  scale_x_date(date_breaks = "1 month", date_labels = "%b %Y") + 
+  scale_color_manual(values = c("People Registered" = "grey70", "Started Treatment" = "grey40")) +
+  labs(color = "Indicator") +
   theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  labs(title = "Aggregated Weekly Data Over Time",
-       x = "Time (Weeks)",
-       y = "Count or Percentage",
-       color = "Indicator")
+  theme(
+    axis.text.x = element_blank(),  # Remove x-axis text
+    axis.ticks.x = element_blank(),
+    axis.title.x = element_blank(),
+    legend.position = "none"
+  ) +
+  
+  # Add vertical lines for events
+  geom_vline(data = events_df, aes(xintercept = as.numeric(week_reg)), linetype = "dashed", color = "grey") +
+  
+  # Add event labels above the plot
+  geom_text(
+    data = events_df, 
+    aes(x = week_reg, y = max_y_p2 * 0.8, label = event_label), 
+    angle = 0,
+    hjust = 0, 
+    vjust = 0, 
+    size = 3, 
+    color = "black", 
+    inherit.aes = FALSE)
 
+p1 <- ggplot(weekly_long_p1, aes(x = week_reg, y = Value, color = Indicator, group = Indicator)) +
+  geom_line(size = 0.8) +
+  geom_point(size = 2) +
+  scale_y_continuous(labels = percent_format(scale = 1), name = "Percentage (%)") +  # Left y-axis
+  scale_x_date(date_breaks = "1 month", date_labels = "%b %Y") +
+  scale_color_viridis_d(option = "F", begin = 0.2, end = 0.8) +
+  labs(x = "Time (Weeks)", color = "Indicator") +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "bottom"
+  )
+
+aligned_plots <- align_plots(p2, p1, align = "v", axis = "lr")
+
+plot_05.08 <- ggdraw() +
+  draw_plot(aligned_plots[[1]], 0, 0.7, 1, 0.3) + 
+  draw_plot(aligned_plots[[2]], 0, 0, 1, 0.7) 
+
+# Display the final plot
 plot_05.08
