@@ -19,11 +19,11 @@ library(purrr)
 
 # Screening data checking and consolidating columns ----------------------
 
-# Create helper column for TST read
+# Create helper binary column for TST read done, regardless of result
 screening_data <- screening_data %>%
   mutate(tst_read_bin = ifelse(!is.na(tst_read_mm) | !is.na(tst_read_positive), TRUE, FALSE))
 
-# Create helper column for TB outcome
+# Create helper binary column for TB outcome done, regardless of result
 screening_data <- screening_data %>%
   mutate(tbdec_bin = ifelse(!is.na(tb_decision), TRUE, FALSE))
 
@@ -36,6 +36,7 @@ treatment_data <- treatment_data %>%
   mutate(age_cat = epikit::age_categories(tpt_age, by = 10, upper = 80))
 
 # Weeks for all dates ---------------------------------
+# Use this for all future weekly data analysis
 
 max_week <- floor_date(Sys.Date(), unit = "week", week_start = 1)
 
@@ -47,13 +48,16 @@ treatment_data <- treatment_data %>%
   mutate(week_reg = floor_date(tpt_reg_date, unit = "week", week_start = 1)) %>%  
   mutate(week_reg = if_else(week_reg > max_week, NA_Date_, week_reg)) %>% 
   mutate(week_start = floor_date(tpt_start_date, unit = "week", week_start = 1)) %>%  
-  mutate(week_start = if_else(week_start > max_week, NA_Date_, week_start))
+  mutate(week_start = if_else(week_start > max_week, NA_Date_, week_start)) %>% 
+  mutate(week_outcome = floor_date(tpt_outcome_date, unit = "week", week_start = 1)) %>%  
+  mutate(week_outcome = if_else(week_start > max_week, NA_Date_, week_outcome))
 
 household_data <- household_data %>%
   mutate(week_enum = floor_date(hh_date, unit = "week", week_start = 1)) %>%  
   mutate(week_enum = if_else(week_enum > max_week, NA_Date_, week_enum))
 
 # EA numbers removing any text -------------------------------
+# Use this for all future EA data analysis
 
 screening_data <- screening_data %>% 
   mutate(ea_id = str_sub(ea_number, 1, 8))
@@ -64,7 +68,7 @@ household_data <- household_data %>%
 treatment_data <- treatment_data %>% 
   mutate(tpt_ea_id = str_sub(tpt_ea, 1, 8))
 
-# Village from EA database to household --------------------------
+# Lookup village for each household from EA data --------------------------
 
 household_data <- household_data %>%
   select(-any_of("hh_village_ea")) %>%
@@ -74,7 +78,8 @@ household_data <- household_data %>%
   ) %>%
   rename(hh_village_ea = village)
 
-# Village and EA from household database to screening -----------------------
+# Lookup village and EA for each participant from household database -----------------------
+# NOTE: village and EA data capture in screening data is unreliable
 
 screening_data <- screening_data %>%
   select(-any_of(c("res_village_hh", "ea_number_hh"))) %>%
@@ -85,9 +90,15 @@ screening_data <- screening_data %>%
   rename(
     ea_number_hh = hh_ea_id,
     res_village_hh = hh_village_ea
+  ) %>%
+  mutate(
+    ea = coalesce(ea_number_hh, ea_id),
+    village = coalesce(res_village_hh, res_village)
   )
 
-# Pivot with count or sum for each field per household into the household dataset -----------------------------
+# Household level aggregation ------------------------------------
+
+## Pivot with count or sum for each field per household into the household dataset -----------------------------
 
 # Aggregate screening data: count the number of screened individuals per dwelling_id
 hh_pivot_reg <- screening_data %>%
@@ -111,23 +122,25 @@ household_data <- household_data %>%
   left_join(hh_pivot, by = "record_id")
 
 
-# Pivot with count or sum for each field per EA into the EA dataset -----------------------------
+# EA level aggregation ------------------------------------
+
+## Pivot with count or sum for each field per EA into the EA dataset -----------------------------
 
 # Aggregate screening data
 ea_pivot_screen <- screening_data %>%
-  filter(!is.na(ea_id) & ea_id != "") %>%
-  group_by(ea_id) %>%
+  filter(!is.na(ea) & ea != "") %>%
+  group_by(ea) %>%
   summarise(
     pop_reg_screen_new = n(),
     date_screen_new = min(en_date_visit, na.rm = TRUE),
     .groups = "drop"
   ) %>%
-  rename(record_id = ea_id)
+  rename(record_id = ea)
 
 ea_pivot_screen_mf <- screening_data %>%
-  filter(!is.na(ea_id) & ea_id != "" & en_sex %in% c("M", "F")) %>%
+  filter(!is.na(ea) & ea != "" & en_sex %in% c("M", "F")) %>%
   mutate(en_sex = tolower(en_sex)) %>%
-  group_by(ea_id, en_sex) %>%
+  group_by(ea, en_sex) %>%
   summarise(count = n(), .groups = "drop") %>%
   pivot_wider(names_from = en_sex, values_from = count, names_prefix = "pop_reg_screen_") %>%
   mutate(
@@ -135,7 +148,7 @@ ea_pivot_screen_mf <- screening_data %>%
     pop_reg_screen_f = replace_na(pop_reg_screen_f, 0)
   ) %>%
   rename(
-    record_id = ea_id,
+    record_id = ea,
     pop_reg_screen_m_new = pop_reg_screen_m,
     pop_reg_screen_f_new = pop_reg_screen_f
   )
@@ -170,14 +183,12 @@ ea_data <- ea_data %>%
                    "date_screen_new"))) %>%
   left_join(ea_pivot, by = "record_id")
 
-# EA level aggregation columns ------------------------------------
-
 ## Create proportion columns in EA data, round to 2dp ---------------------------
 
 ea_data <- ea_data %>%
-  mutate(prop_reg = round(ifelse(pop_elig_new == 0, NA, pop_reg_enum_new / pop_elig_new), 2))
+  mutate(prop_reg = round(ifelse(pop_elig_new == 0, NA, pop_reg_enum_new / pop_elig_new), 2))  # Note denominator is eligible population
 
-## Weekly Aggregation ------------------------------------------------------
+# Weekly Aggregation ------------------------------------------------------
 
 # Aggregate all required counts at the weekly level
 weekly_data <- screening_data %>%
@@ -227,7 +238,110 @@ tst_read_positive_counts <- screening_data %>%
   pivot_wider(names_from = tst_read_positive, values_from = n, values_fill = list(n = 0)) %>%
   rename_with(~paste0("tst_", make.names(.)), -week_reg) # Ensure column names are readable
 
-# Merge with existing weekly_data
+# Join to weekly_data
 weekly_data <- weekly_data %>%
   left_join(tb_decision_counts, by = "week_reg") %>%
   left_join(tst_read_positive_counts, by = "week_reg")
+
+# Village level aggregation ----------------------------
+
+## Village data ---------------------------------
+
+# Aggregate data from ea_data
+village_data <- ea_data %>%
+  group_by(village) %>%
+  summarise(
+    pop_2020 = sum(pop_2020, na.rm = TRUE),
+    hh_2020 = sum(hh_2020, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+# Aggregate data from household_data
+village_data_hh <- household_data %>%
+  group_by(hh_village_ea) %>%
+  summarise(
+    hh_enum = n(),
+    pop_elig = sum(hh_size_elig, na.rm = TRUE),
+    pop_enum = sum(hh_size, na.rm = TRUE)
+  ) %>%
+  ungroup() %>% 
+  rename(village = hh_village_ea)
+
+# Aggregate data from screening_data
+village_data_screen <- screening_data %>%
+  group_by(village) %>%
+  summarise(
+    pop_reg = n(),
+    date_started = min(en_date_visit, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+# Merge datasets using left_join to retain all villages from ea_data
+village_data <- village_data %>%
+  select(-any_of(c("hh_enum", "pop_elig", "pop_enum", "pop_reg"))) %>% 
+  left_join(village_data_hh, by = "village") %>%
+  left_join(village_data_screen, by = "village")
+
+# Create columns for village proportions
+village_data <- village_data %>% 
+  mutate(prop_reg = round(ifelse(pop_2020 == 0, NA, pop_reg / pop_2020), 2)) %>%  # Note denominator is 2020 population
+  mutate(prop_hh_enum = round(ifelse(hh_2020 == 0, NA, hh_enum / hh_2020), 2))  # Note denominator is 2020 n households
+  
+# Create variable for village ordered by date_started
+village_order <- village_data %>%
+  arrange(date_started) %>%
+  pull(village)
+
+# Convert village to a factor with levels in order of first reached
+village_data <- village_data %>%
+  mutate(village = factor(village, levels = village_order))
+
+
+## Cumulative village data ---------------------------------
+
+# Identify villages with a maximum cumulative total >= 100
+villages_gte_100 <- village_data %>%
+  filter(pop_reg >= 100) %>%
+  pull(village)
+
+# Define overall date range based on week_reg in screening_data
+week_range_complete <- seq.Date(
+  from = min(screening_data$week_reg, na.rm = TRUE),
+  to = max(screening_data$week_reg, na.rm = TRUE),
+  by = "week"
+)
+
+# Calculate cumulative screened counts by village and week from screening_data
+village_data_cum <- screening_data %>%
+  mutate(
+    village = if_else(is.na(village) | village == "" | !(village %in% villages_gte_100),
+    "Other or unknown", village)
+  ) %>%
+  filter(!is.na(week_reg)) %>%
+  group_by(village, week_reg) %>%
+  summarise(n_screened = n(), .groups = "drop") %>%
+  arrange(village, week_reg) %>%
+  complete(village, week_reg = week_range_complete, fill = list(n_screened = 0)) %>% # Fill missing weeks first
+  group_by(village) %>%
+  mutate(cum_screened = cumsum(n_screened)) %>%
+  ungroup()
+
+# Join village population and calculate cumulative proportion safely
+village_data_cum <- village_data_cum %>%
+  left_join(village_data, by = "village") %>%
+  mutate(
+    pop_2020 = ifelse(is.na(pop_2020) | pop_2020 == 0, NA, pop_2020),
+    cum_prop = ifelse(is.na(pop_2020), NA, cum_screened / pop_2020)
+  )
+
+# Determine first week each village was reached
+village_order_cum <- village_data_cum %>%
+  filter(cum_screened > 0) %>%
+  group_by(village) %>%
+  summarise(first_week = min(week_reg, na.rm = TRUE), .groups = "drop") %>%
+  arrange(first_week) %>%
+  pull(village)
+
+# Convert village to a factor with levels in order of first reached
+village_data_cum <- village_data_cum %>%
+  mutate(village = factor(village, levels = village_order_cum))

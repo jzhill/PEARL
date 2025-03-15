@@ -43,7 +43,7 @@ for (folder in report_folders) {
   latest_file <- files[latest_index]
   
   # Read the .csv file into a data frame
-  df <- read_csv(latest_file)
+  df <- read_csv(latest_file, show_col_types = FALSE)
   
   # Create variable names and assign dataframe
   var_name <- paste0(folder, "_data")
@@ -106,7 +106,7 @@ for (folder in report_folders) {
   dd_file_path <- here("data-raw", paste0(folder, "_dd.csv"))
   
   if (file.exists(dd_file_path)) {
-    dd_data <- read_csv(dd_file_path) %>%
+    dd_data <- read_csv(dd_file_path, show_col_types = FALSE) %>%
       rename_if_needed() %>%
       mutate(field_label_norm = normalise_field_label(field_label))
     dd_var_name <- paste0(folder, "_dd")

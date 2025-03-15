@@ -91,7 +91,7 @@ for (report in names(reports)) {
     redcap_uri = uri,
     token = config$token,
     verbose = TRUE,
-    config_options = list(timeout = 5)
+    config_options = list(timeout = 10)
   )$data
   
   # Build the filename for the data dictionary CSV file (e.g., "screening_dd.csv")
@@ -101,3 +101,4 @@ for (report in names(reports)) {
   write_csv(dd_data, file = dd_file_path)
   message("Saved data dictionary to: ", dd_file_path, "\n")
 }
+
