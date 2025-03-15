@@ -38,7 +38,8 @@ treatment_data <- treatment_data %>%
 # Weeks for all dates ---------------------------------
 # Use this for all future weekly data analysis
 
-max_week <- floor_date(Sys.Date(), unit = "week", week_start = 1)
+min_week <- floor_date(min(screening_data$en_date_visit, na.rm = TRUE), unit = "week", week_start = 1)
+max_week <- floor_date(max(screening_data$en_date_visit, na.rm = TRUE), unit = "week", week_start = 1)
 
 screening_data <- screening_data %>%
   mutate(week_reg = floor_date(en_date_visit, unit = "week", week_start = 1)) %>%
@@ -198,6 +199,7 @@ weekly_data <- screening_data %>%
     tbdec = ifelse(tbdec_bin == TRUE, 1, 0),
     sdr = ifelse(calc_sdr == "Given", 1, 0)
   ) %>%
+  filter(week_reg <= max_week) %>%  # drop future weeks
   group_by(week_reg) %>%
   summarise(
     reg = n(),
@@ -212,17 +214,46 @@ weekly_data <- screening_data %>%
     anyrx_pct = ifelse(sum(reg, na.rm = TRUE) > 0, sum(anyrx, na.rm = TRUE) / sum(reg, na.rm = TRUE) * 100, NA_real_),
     .groups = "drop"
   ) %>%
-  complete(week_reg = seq.Date(
-    from = min(screening_data$week_reg, na.rm = TRUE),
-    to = max(screening_data$week_reg, na.rm = TRUE),
-    by = "week"
-  ), fill = list(reg = 0, tst_placed = 0, tst_read = 0, tbdec = 0, sdr = 0, anyrx = 0,
-                 tst_read_pct = NA_real_, tbdec_pct = NA_real_, sdr_pct = NA_real_, anyrx_pct = NA_real_)) %>%
-  mutate(
-    month = lubridate::floor_date(week_reg, "month"),
-    quarter = lubridate::floor_date(week_reg, "quarter"),
-    year = lubridate::floor_date(week_reg, "year")
+  complete(
+    week_reg = seq.Date(from = min_week, to = max_week, by = "week"),
+    fill = list(
+      reg = 0,
+      tst_placed = 0,
+      tst_read = 0,
+      tbdec = 0,
+      sdr = 0,
+      anyrx = 0,
+      tst_read_pct = NA_real_,
+      tbdec_pct = NA_real_,
+      sdr_pct = NA_real_,
+      anyrx_pct = NA_real_
+    )
   )
+
+# Aggregate Household Data using week_enum
+household_weekly <- household_data %>%
+  drop_na(week_enum) %>%
+  count(week_enum, name = "hh_enum") %>%
+  complete(
+    week_enum = seq.Date(from = min_week, to = max_week, by = "week"),
+    fill = list(hh_enum = 0)
+  ) %>%
+  rename(week_reg = week_enum)
+
+# Aggregate Treatment Data using week_start
+treatment_weekly <- treatment_data %>%
+  drop_na(week_start) %>%
+  count(week_start, name = "tpt_start") %>%
+  complete(
+    week_start = seq.Date(from = min_week, to = max_week, by = "week"),
+    fill = list(tpt_start = 0)
+  ) %>%
+  rename(week_reg = week_start)  # Rename for consistency
+
+# Merge household and treatment weekly counts into weekly_data
+weekly_data <- weekly_data %>%
+  left_join(household_weekly, by = "week_reg") %>%
+  left_join(treatment_weekly, by = "week_reg")
 
 # Aggregate Presumptive TB counts by week_reg, ensuring factor labels are retained
 tb_decision_counts <- screening_data %>%

@@ -1,71 +1,40 @@
-library(dplyr)
-library(lubridate)
-library(tidyr)
+# Load necessary libraries
 library(ggplot2)
+library(dplyr)
 
-# Determine the maximum week to be the most recent Monday (or start of the week)
-max_week <- floor_date(Sys.Date(), unit = "week", week_start = 1)
+# Replace zero values with NA for plotting
+weekly_data_na <- weekly_data %>%
+  mutate(
+    hh_enum = ifelse(hh_enum == 0, NA, hh_enum),
+    reg = ifelse(reg == 0, NA, reg),
+    tpt_start = ifelse(tpt_start == 0, NA, tpt_start)
+  )
 
-# 1. Screening Data: using en_date_visit
-screening_weekly <- screening_data %>%  
-  drop_na(en_date_visit) %>%  
-  mutate(week = floor_date(en_date_visit, unit = "week", week_start = 1)) %>%  
-  filter(week <= max_week) %>%   # drop any future weeks
-  count(week) %>%  
-  complete(
-    week = seq.Date(
-      from = min(week, na.rm = TRUE), 
-      to = max_week,
-      by = "week"
-    ),
-    fill = list(n = 0)
-  ) %>%  
-  mutate(source = "Screening")
+# Define the plot
+plot_05.01 <- ggplot(weekly_data_na, aes(x = week_reg)) +
+  
+  geom_line(aes(y = hh_enum, color = "Households Enumerated"), size = 0.6) +
+  geom_point(aes(y = hh_enum, color = "Households Enumerated"), size = 2, na.rm = TRUE) +
+  
+  geom_line(aes(y = reg, color = "People Registered"), size = 0.6) +
+  geom_point(aes(y = reg, color = "People Registered"), size = 2, na.rm = TRUE) +
+  
+  geom_line(aes(y = tpt_start, color = "People Started on TPT"), size = 0.6) +
+  geom_point(aes(y = tpt_start, color = "People Started on TPT"), size = 2, na.rm = TRUE) +
+  
+  scale_color_viridis_d(option = "F", begin = 0.2, end = 0.8) +
 
-# 2. Household Data: using hh_date
-household_weekly <- household_data %>%  
-  drop_na(hh_date) %>%  
-  mutate(week = floor_date(hh_date, unit = "week", week_start = 1)) %>%  
-  filter(week <= max_week) %>%   # drop any future weeks
-  count(week) %>%  
-  complete(
-    week = seq.Date(
-      from = min(week, na.rm = TRUE), 
-      to = max_week,
-      by = "week"
-    ),
-    fill = list(n = 0)
-  ) %>%  
-  mutate(source = "Household")
-
-# 3. Treatment Data: using tpt_start_date
-treatment_weekly <- treatment_data %>%  
-  drop_na(tpt_start_date) %>%  
-  mutate(week = floor_date(tpt_start_date, unit = "week", week_start = 1)) %>%  
-  filter(week <= max_week) %>%   # drop any future weeks
-  count(week) %>%  
-  complete(
-    week = seq.Date(
-      from = min(week, na.rm = TRUE), 
-      to = max_week,
-      by = "week"
-    ),
-    fill = list(n = 0)
-  ) %>%  
-  mutate(source = "Treatment")
-
-# Combine the weekly counts from all sources
-combined_weekly <- bind_rows(screening_weekly, household_weekly, treatment_weekly)
-
-# Plot the combined counts as a dodged bar chart
-plot_05.01 <- ggplot(combined_weekly, aes(x = week, y = n, fill = source)) +
-  geom_bar(stat = "identity", position = "dodge") +
-  labs(title = paste("Weekly Activity as of", Sys.Date()),
-       x = "Week",
-       y = "n",
-       fill = "Activity Type") +
-  scale_x_date(date_labels = "%Y-%m-%d", date_breaks = "1 month") +
+  labs(
+    title = "Weekly activity: households enumerated, people registered, people commenced on TPT",
+    x = "Week",
+    y = "Count",
+    color = "Indicator"
+  ) +
+  
   theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "bottom"
+  )
 
 plot_05.01

@@ -1,33 +1,40 @@
 ---
 title: "PEARL Weekly Situation Report"
-author: "National Tuberculosis Program, Kiribati"
 date: "`r Sys.Date()`"
-format:
-  pdf:
-    toc: true
-    number-sections: true
-    output-file: "weekly_sitrep.pdf"
+format: 
+  html: default
 execute:
-  echo: true
+  echo: false
   message: false
   warning: false
 ---
-
-# Load Data
 
 ```{r}
 #| label: Load data
 
 # Load necessary libraries
 library(here)
+library(flextable)
 
 # Source scripts for data loading and tidying
 source(here("R", "02_load_data.R"))
 source(here("R", "03_tidy_data.R"))
 
-# Automatically source all scripts in /data-raw/R that start with 05 or 06
-script_files <- list.files(path = here("R"), pattern = "^(05|06).*\\.R$", full.names = TRUE)
-lapply(script_files, source)
+# Automatically source all scripts in ~/R that start with 05 or 06
+script_dir <- here("R")
+script_files <- list.files(path = script_dir, pattern = "^(05|06).*\\.R$", full.names = TRUE)
+
+if (length(script_files) > 0) {
+  invisible(lapply(script_files, function(script) {
+    message("Sourcing: ", script)
+    tryCatch(
+      source(script),
+      error = function(e) message("Error in ", script, ": ", e$message)
+    )
+  }))
+} else {
+  message("No matching scripts found in: ", script_dir)
+}
 ```
 
 # Activity This Week
@@ -36,7 +43,8 @@ lapply(script_files, source)
 
 ```{r}
 #| label: Summary flextable
-print(table_06.01)
+
+flextable::htmltools_value(table_06.01)
 ```
 
 # Screening Progress
@@ -95,19 +103,3 @@ print(plot_05.04)
 # Plan for Next Week
 
 *TBD*
-
-```{r}
-#| label: Move report to the right place
-
-# Ensure reports directory exists
-dir.create(here("reports"), showWarnings = FALSE)
-
-# Define new filename with date
-new_filename <- here("reports", paste0("weekly_sitrep_", Sys.Date(), ".pdf"))
-
-# Move the file after rendering
-file.rename("weekly_sitrep.pdf", new_filename)
-
-message("Report saved to: ", new_filename)
-
-```
