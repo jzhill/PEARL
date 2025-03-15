@@ -1,6 +1,6 @@
 library(apyramid)
 
-screening_data %>%
+plot_05.02 <- screening_data %>%
   filter(en_sex %in% c("M", "F")) %>% 
   mutate(en_sex = droplevels(en_sex)) %>%
   age_pyramid(
@@ -8,5 +8,4 @@ screening_data %>%
     split_by = "en_sex"
   )
 
-print(nrow(screening_data))
-print(nrow(screening_data %>% filter(en_sex %in% c("M", "F"))))
+plot_05.02

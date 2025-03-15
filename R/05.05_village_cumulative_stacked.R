@@ -8,7 +8,7 @@ max_date <- max(village_data_cum$week_reg, na.rm = TRUE)
 max_val <- (ceiling(sum(village_data_cum$n_screened, na.rm = TRUE) / 1000) * 1000) + 1
 
 # Create the cumulative stacked area plot (y-axis = cumulative count).
-ggplot(village_data_cum, aes(x = week_reg, y = cum_screened, fill = village)) +
+plot_05.05 <- ggplot(village_data_cum, aes(x = week_reg, y = cum_screened, fill = village)) +
   geom_area() +
   labs(x = "Registration Week",
        y = "Cumulative Number Screened",
@@ -23,3 +23,5 @@ ggplot(village_data_cum, aes(x = week_reg, y = cum_screened, fill = village)) +
     ) +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+plot_05.05

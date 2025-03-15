@@ -205,13 +205,19 @@ weekly_data <- screening_data %>%
     tst_read = sum(tst_read, na.rm = TRUE),
     tbdec = sum(tbdec, na.rm = TRUE),
     sdr = sum(sdr, na.rm = TRUE),
+    anyrx = sum(!is.na(calc_any_treatment)),
+    tst_read_pct = ifelse(sum(tst_placed, na.rm = TRUE) > 0, sum(tst_read, na.rm = TRUE) / sum(tst_placed, na.rm = TRUE) * 100, NA_real_),
+    tbdec_pct = ifelse(sum(reg, na.rm = TRUE) > 0, sum(tbdec, na.rm = TRUE) / sum(reg, na.rm = TRUE) * 100, NA_real_),
+    sdr_pct = ifelse(sum(reg, na.rm = TRUE) > 0, sum(sdr, na.rm = TRUE) / sum(reg, na.rm = TRUE) * 100, NA_real_),
+    anyrx_pct = ifelse(sum(reg, na.rm = TRUE) > 0, sum(anyrx, na.rm = TRUE) / sum(reg, na.rm = TRUE) * 100, NA_real_),
     .groups = "drop"
   ) %>%
   complete(week_reg = seq.Date(
     from = min(screening_data$week_reg, na.rm = TRUE),
     to = max(screening_data$week_reg, na.rm = TRUE),
     by = "week"
-  ), fill = list(reg = 0, tst_placed = 0, tst_read = 0, tbdec = 0, sdr = 0)) %>%
+  ), fill = list(reg = 0, tst_placed = 0, tst_read = 0, tbdec = 0, sdr = 0, anyrx = 0,
+                 tst_read_pct = NA_real_, tbdec_pct = NA_real_, sdr_pct = NA_real_, anyrx_pct = NA_real_)) %>%
   mutate(
     month = lubridate::floor_date(week_reg, "month"),
     quarter = lubridate::floor_date(week_reg, "quarter"),
@@ -342,6 +348,9 @@ village_order_cum <- village_data_cum %>%
   arrange(first_week) %>%
   pull(village)
 
+# Ensure 'Other or unknown' is always the first level
+village_order_cum <- c(setdiff(village_order_cum, "Other or unknown"), "Other or unknown")
+
 # Convert village to a factor with levels in order of first reached
 village_data_cum <- village_data_cum %>%
   mutate(village = factor(village, levels = village_order_cum))
@@ -356,7 +365,7 @@ ea_data$record_id <- as.character(ea_data$record_id)
 
 # Remove previously joined columns, then join
 layer_ki_ea_3832 <- layer_ki_ea_3832 %>%
-  select(-starts_with("joined_"), everything()) %>%  # Remove previous joins
+  select(-all_of(grep("^joined_", names(.), value = TRUE))) %>%  # Remove previous joins
   left_join(ea_data, by = c("ea_2020" = "record_id")) %>%  # Perform join
   rename_with(~ paste0("joined_", .), .cols = any_of(setdiff(names(ea_data), "record_id")))  # Rename only newly added columns
 

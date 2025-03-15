@@ -1,7 +1,7 @@
 library(tidyverse)
 library(ggplot2)
 
-ea_data %>%
+plot_05.03 <- ea_data %>%
   mutate(prop_reg = pop_reg_screen / pop_elig) %>%  # Calculate the proportion
   filter(pop_elig > 50) %>%                           # Only include EAs with >50 eligible individuals
   mutate(record_id = forcats::fct_reorder(record_id, date_enum_new, .desc = FALSE)) %>%
@@ -12,3 +12,5 @@ ea_data %>%
        fill = "village") +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+plot_05.03

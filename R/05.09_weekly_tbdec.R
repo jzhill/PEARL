@@ -14,7 +14,7 @@ proportion_data <- screening_data %>%
   mutate(proportion = count / sum(count))
 
 # Plot the stacked bar chart
-ggplot(proportion_data, aes(x = week_reg, y = proportion, fill = tb_decision)) +
+plot_05.09 <- ggplot(proportion_data, aes(x = week_reg, y = proportion, fill = tb_decision)) +
   geom_bar(stat = "identity") +
   scale_fill_manual(values = c("Missing" = "lightgrey", "TB status uncertain" = "palegreen3", "Ruled out TB" = "lightblue", "Presumptive TB" = "lightcoral")) +
   scale_x_date(date_labels = "%Y-%m-%d", date_breaks = "1 week") +
@@ -23,3 +23,5 @@ ggplot(proportion_data, aes(x = week_reg, y = proportion, fill = tb_decision)) +
        fill = "TST result") +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+plot_05.09

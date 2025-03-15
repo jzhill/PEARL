@@ -3,12 +3,10 @@ title: "PEARL Weekly Situation Report"
 author: "National Tuberculosis Program, Kiribati"
 date: "`r Sys.Date()`"
 format:
-  html:
-    toc: true  # Table of contents
-    number-sections: true
   pdf:
     toc: true
     number-sections: true
+    output-file: "weekly_sitrep.pdf"
 execute:
   echo: true
   message: false
@@ -26,9 +24,10 @@ library(here)
 # Source scripts for data loading and tidying
 source(here("R", "02_load_data.R"))
 source(here("R", "03_tidy_data.R"))
-source(here("R", "05.01_weekly_participation.R"))
-source(here("R", "05.04_village_cumulative_prop.R"))
-source(here("R", "06.01_summary.R"))
+
+# Automatically source all scripts in /data-raw/R that start with 05 or 06
+script_files <- list.files(path = here("R"), pattern = "^(05|06).*\\.R$", full.names = TRUE)
+lapply(script_files, source)
 ```
 
 # Activity This Week
@@ -42,14 +41,46 @@ print(table_06.01)
 
 # Screening Progress
 
+```{r}
+#| label: Progress plots
+print(map_05.07)
+```
+
+```{r}
+#| label: Age pyramid
+print(plot_05.02)
+```
+
+```{r}
+#| label: EA props
+print(plot_05.03)
+```
+
 ## Weekly activities over time
 
-## Cumulative screening enrollment and coverage by village
+```{r}
+#| label: Weekly activities
+print(plot_05.01)
+```
+
+```{r}
+#| label: Weekly quality
+print(plot_05.08)
+```
+
+## Cumulative screening participation and coverage by village
+
+```{r}
+#| label: Cumulative village
+
+print(plot_05.05)
+```
 
 ## Coverage progress by village
 
 ```{r}
-#| label: Village cumulative prop plot
+#| label: Cumulative village prop
+
 print(plot_05.04)
 ```
 
@@ -64,3 +95,19 @@ print(plot_05.04)
 # Plan for Next Week
 
 *TBD*
+
+```{r}
+#| label: Move report to the right place
+
+# Ensure reports directory exists
+dir.create(here("reports"), showWarnings = FALSE)
+
+# Define new filename with date
+new_filename <- here("reports", paste0("weekly_sitrep_", Sys.Date(), ".pdf"))
+
+# Move the file after rendering
+file.rename("weekly_sitrep.pdf", new_filename)
+
+message("Report saved to: ", new_filename)
+
+```

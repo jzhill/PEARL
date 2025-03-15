@@ -12,10 +12,12 @@ layer_betio_ea_3832 <- layer_betio_ea_3832 %>%
   mutate(label_text = paste0(ea_2020, "\n", round(joined_prop_reg * 100, 1), "%"))
 
 # Plot map
-ggplot(layer_betio_ea_3832) +
+map_05.07 <- ggplot(layer_betio_ea_3832) +
   geom_sf(aes(fill = joined_prop_reg), color = "black", size = 0.2) +
   geom_sf_text(aes(label = label_text), size = 2.5, color = "white") +
   scale_fill_gradient(low = "lightgrey", high = "darkgreen", na.value = "lightgrey") +
   labs(title = "Screening Proportion by Enumeration Area (VID 716)",
        fill = "Proportion") +
   theme_minimal()
+
+map_05.07
