@@ -58,12 +58,14 @@ treatment_weekly <- treatment_data %>%
 combined_weekly <- bind_rows(screening_weekly, household_weekly, treatment_weekly)
 
 # Plot the combined counts as a dodged bar chart
-ggplot(combined_weekly, aes(x = week, y = n, fill = source)) +
+plot_05.01 <- ggplot(combined_weekly, aes(x = week, y = n, fill = source)) +
   geom_bar(stat = "identity", position = "dodge") +
-  labs(title = "Weekly Case Counts by Source",
+  labs(title = paste("Weekly Activity as of", Sys.Date()),
        x = "Week",
-       y = "Number of Cases",
-       fill = "Data Source") +
+       y = "n",
+       fill = "Activity Type") +
   scale_x_date(date_labels = "%Y-%m-%d", date_breaks = "1 month") +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+plot_05.01
