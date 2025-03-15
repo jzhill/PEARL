@@ -316,7 +316,8 @@ village_data <- village_data %>%
 # Create columns for village proportions
 village_data <- village_data %>% 
   mutate(prop_reg = round(ifelse(pop_2020 == 0, NA, pop_reg / pop_2020), 2)) %>%  # Note denominator is 2020 population
-  mutate(prop_hh_enum = round(ifelse(hh_2020 == 0, NA, hh_enum / hh_2020), 2))  # Note denominator is 2020 n households
+  mutate(prop_hh_enum = round(ifelse(hh_2020 == 0, NA, hh_enum / hh_2020), 2)) %>%   # Note denominator is 2020 n households
+  mutate(prop_reg_elig = round(ifelse(pop_elig == 0, NA, pop_reg / pop_elig), 2))   # Note denominator is 2020 n households
   
 # Create variable for village ordered by date_started
 village_order <- village_data %>%
@@ -358,11 +359,16 @@ village_data_cum <- screening_data %>%
   ungroup()
 
 # Join village population and calculate cumulative proportion safely
+# Note that we know the 2020 population for all villages
+# The eligible village population is only known AFTER completing the village
+# Proportions for villages in progress are not correct!
 village_data_cum <- village_data_cum %>%
   left_join(village_data, by = "village") %>%
   mutate(
     pop_2020 = ifelse(is.na(pop_2020) | pop_2020 == 0, NA, pop_2020),
-    cum_prop = ifelse(is.na(pop_2020), NA, cum_screened / pop_2020)
+    cum_prop = ifelse(is.na(pop_2020), NA, cum_screened / pop_2020),  # Denominator is 2020 population
+    pop_elig = ifelse(is.na(pop_elig) | pop_elig == 0, NA, pop_elig),
+    cum_prop_elig = ifelse(is.na(pop_elig), NA, cum_screened / pop_elig)  # Denominator is eligible population
   )
 
 # Determine first week each village was reached
