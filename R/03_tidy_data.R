@@ -187,8 +187,11 @@ ea_data <- ea_data %>%
 
 ## Create proportion columns in EA data, round to 2dp ---------------------------
 
+# Note denominator is eligible population
 ea_data <- ea_data %>%
-  mutate(prop_reg = round(ifelse(pop_elig_new == 0, NA, pop_reg_enum_new / pop_elig_new), 2))  # Note denominator is eligible population
+  mutate(
+    prop_reg = round(ifelse(pop_elig_new == 0, NA, pop_reg_enum_new / pop_elig_new), 2) %>% replace_na(NA_real_)
+  )
 
 # Weekly Aggregation ------------------------------------------------------
 
@@ -202,11 +205,11 @@ weekly_data <- screening_data %>%
     reg = n(),
     tst_placed = sum(as.integer(tst_success == "Yes"), na.rm = TRUE),
     tst_read = sum(as.integer(tst_read_bin), na.rm = TRUE),
-    cxr_elig = sum(as.integer(calc_xr_elig == "Yes"), na.rm = TRUE),
+    cxr_elig = sum(as.integer(calc_xr_elig), na.rm = TRUE),
     cxr_done = sum(as.integer(cxr_done == "Yes"), na.rm = TRUE),
     tbdec = sum(as.integer(tbdec_bin), na.rm = TRUE),
     anyrx = sum(!is.na(calc_any_treatment), na.rm = TRUE),
-    xpert = sum(as.integer(spuxpt_labreq_lab == "Yes"), na.rm = TRUE),
+    xpert = sum(as.integer(spuxpt_labreq_lab), na.rm = TRUE),
     tst_place_pct = if_else(sum(reg, na.rm = TRUE) > 0, sum(tst_placed, na.rm = TRUE) / sum(reg, na.rm = TRUE) * 100, NA_real_),
     tst_read_pct = if_else(sum(tst_placed, na.rm = TRUE) > 0, sum(tst_read, na.rm = TRUE) / sum(tst_placed, na.rm = TRUE) * 100, NA_real_),
     tbdec_pct = if_else(sum(reg, na.rm = TRUE) > 0, sum(tbdec, na.rm = TRUE) / sum(reg, na.rm = TRUE) * 100, NA_real_),
@@ -410,6 +413,7 @@ layer_betio_ea_3832 <- layer_ki_ea_3832 %>%
 
 # Function to compute weekly and total metrics
 compute_metrics <- function(data, week_col = NULL, filter_expr = NULL, distinct_col = NULL) {
+  
   # Apply weekly filter if week_col is provided
   if (!is.null(week_col)) {
     data_week <- data %>% filter(.data[[week_col]] == current_week)
@@ -439,10 +443,10 @@ metrics <- list(
   "People Registered" = compute_metrics(screening_data, week_col = "week_reg"),
   "TSTs Completed" = compute_metrics(screening_data, week_col = "week_reg", filter_expr = expression(tst_read_bin == TRUE)),
   "Referred to NTP" = compute_metrics(screening_data, week_col = "week_reg", filter_expr = expression(tb_decision == "Presumptive TB")),
-  "Referred to NLP" = compute_metrics(screening_data, week_col = "week_reg", filter_expr = expression(lep_refer == "Yes")),
+  "Referred to NLP" = compute_metrics(screening_data, week_col = "week_reg", filter_expr = expression(lep_refer == TRUE)),
   "Referred to Hep B" = compute_metrics(screening_data, week_col = "week_reg", filter_expr = expression(prerx_hbv_1 == "Positive")),
   "X-Rays Performed" = compute_metrics(screening_data, week_col = "week_reg", filter_expr = expression(cxr_done == "Yes")),
-  "Xpert Tests Done" = compute_metrics(screening_data, week_col = "week_reg", filter_expr = expression(spuxpt_labreq_lab == "Yes")),
+  "Xpert Tests Done" = compute_metrics(screening_data, week_col = "week_reg", filter_expr = expression(spuxpt_labreq_lab == TRUE)),
   "Started on TPT" = compute_metrics(treatment_data, week_col = "week_start"),
   "Completed TPT" = compute_metrics(treatment_data, week_col = "week_outcome", filter_expr = expression(tpt_outcome_reason == "Completed"))
 )
