@@ -8,6 +8,21 @@ editor_options:
 
 Repo for the PEARL project
 
+# Quick Start
+
+1.  Install R, RStudio and `renv`
+
+2.  Fork and clone this repo using the recommended method here:
+    <https://happygitwithr.com/fork-and-clone>
+
+3.  Initialize the environment using `renv::restore()`
+
+4.  Store REDCap API keys in `.Renviron`
+
+5.  Retrieve or export raw data from REDCap
+
+6.  Use scripts to load, tidy and analyse data
+
 # About PEARL
 
 The PEARL+ Project is an ambitious, systematic mass screening, treatment
@@ -73,6 +88,10 @@ according to the schema:
 
 05 - individual working figures, plots, etc
 
+06 - individual working tables
+
+07 - shiny dashboards
+
 ## Expected directory structure
 
 \~/data-processed
@@ -80,6 +99,8 @@ according to the schema:
 \~/data-raw
 
 \~/data-raw/ea
+
+\~/data-raw/dds
 
 \~/data-raw/household
 
@@ -101,34 +122,48 @@ This project uses the renv package to create a reproducible environment
 The .Rprofile file enables bootstrapping of renv, and ensures the
 directory structure is present as above.
 
-## Raw data
+## 01 Raw data
 
 There are two ways of loading data into the environment: 1) with an API
 key and 1) manually.
 
-### Retrieving raw data with an API key
+### Storing API Keys and retrieving data
 
 If you have an API key available as a user of the REDCap projects listed
 above, then you can run the scripts in order, starting with
 01_retrieve_data.R to retrieve and store raw data and data dictionaries
 in the expected directories.
 
-To do this, the script expects API keys to be stored in the user's
-.Renviron file. The file location can be found by running
-`Sys.getenv("HOME")` and the .Renviron file can be edited by running
-`usethis::edit_r_environ()`. The script will check for presence of four
-value = key pairs, with names:
+To retrieve data via the REDCap API, first [store your API
+keys]{.underline} in the `.Renviron` file:
 
-RCAPI_PEARL_ea = key
+1.  Find your home directory (where `.Renviron` is located):
 
-RCAPI_PEARL_hh = key
+    ``` r
+    Sys.getenv("HOME")
+    ```
 
-RCAPI_PEARL_screen = key
+2.  Open and edit `.Renviron`:
 
-RCAPI_PEARL_treat = key
+    ``` r
+    usethis::edit_r_environ()
+    ```
 
-The .gitignore file includes .Renviron to ensure that keys are not
-exposed to version control.
+3.  Add the following key-value pairs (replace `your-key` with your
+    actual API keys):
+
+    ``` r
+    RCAPI_PEARL_ea = "your-key"
+    RCAPI_PEARL_hh = "your-key"
+    RCAPI_PEARL_screen = "your-key"
+    RCAPI_PEARL_treat = "your-key"
+    ```
+
+4.  Save and restart R to apply the changes.
+
+Your API keys are now [securely stored and ignored in version
+control.]{.underline} The `.gitignore` file includes `.Renviron` to
+ensure that keys are not exposed to version control.
 
 ### Manually downloading raw data
 
@@ -153,7 +188,7 @@ into the respective raw data folder.
 ### Manually downloading raw data dictionaries
 
 The current data dictionary for each REDCap project should be saved into
-the \~/data-raw folder using the following filenames:
+the \~/data-raw/dds folder using the following filenames:
 
 1.  ea_dd.csv
 2.  household_dd.csv
@@ -165,18 +200,20 @@ the \~/data-raw folder using the following filenames:
 This is not included in REDCap, and is provided by the SPC Statistics
 for Development Division, through their popGIS service. GIS analysis
 scripts in this project expect a file named:
-data-raw/gis/KIR_EA_Census2020FINAL.geojson. This can be provided upon
-request.
 
-## Loading data
+`data-raw/gis/KIR_EA_Census2020FINAL.geojson`
 
-Once raw data is present as .csv files in the \~/data-raw folders, the
-script named 02_load_data.R will load data from the files, load the data
-dictionaries, and then set column types and column names according to
-the data dictionary for each project. This prepares a working data
+This can be provided upon request.
+
+## 02 Loading data
+
+Once raw data is present as .csv files in the \~/data-raw/ directories,
+the script named 02_load_data.R will load data from the files, load the
+data dictionaries, and then set column types and column names according
+to the data dictionary for each project. This prepares a working data
 environment for the next step.
 
-## Tidying, cleaning and preparing data
+## 03 Tidying, cleaning and preparing data
 
 Once data has been loaded into the environment, the script named
 03_tidy_data.R will create helper columns, clean data as necessary,
@@ -184,7 +221,7 @@ pivot across EA, household and individual level and perform
 miscellaneous other functions as needed to create a tidy data set for
 analysis.
 
-## Helper scripts
+## 04 Helper scripts
 
 Additional scripts for operational and support procedures are labelled
 starting "04\_". These are run by specific staff as part of project
@@ -196,5 +233,6 @@ Any write function will require a confirmation by the user.
 
 ## Data analysis and outputs
 
-Scripts prefixed "05\_" are for specific types of figure, plot, tables,
-dashboards and so on - code can be incorporated into reports as needed.
+Scripts prefixed "05\_", "06\_", "07\_" are for specific types of
+figure, plot, tables, dashboards and so on - code can be incorporated
+into reports as needed.
