@@ -17,6 +17,8 @@ library(REDCapR)
 
 uri <- "https://redcap.sydney.edu.au/api/"
 
+# Ensure API tokens are stored securely in .Renviron and loaded via Sys.getenv()
+
 tokens <- list(
   screening = Sys.getenv("RCAPI_PEARL_screen"),
   household = Sys.getenv("RCAPI_PEARL_hh"),
