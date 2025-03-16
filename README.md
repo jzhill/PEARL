@@ -1,9 +1,3 @@
----
-editor_options: 
-  markdown: 
-    wrap: 72
----
-
 # PEARL
 
 Repo for the PEARL project
@@ -116,10 +110,10 @@ according to the schema:
 
 ## Initialising the environment
 
-This project uses the renv package to create a reproducible environment
+This project uses the `renv` package to create a reproducible environment  
 <https://rstudio.github.io/renv/articles/renv.html>
 
-The .Rprofile file enables bootstrapping of renv, and ensures the
+The `.Rprofile` file enables bootstrapping of renv, and ensures the
 directory structure is present as above.
 
 ## 01 Raw data
