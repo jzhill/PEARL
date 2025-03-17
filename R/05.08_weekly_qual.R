@@ -95,7 +95,7 @@ plot_05.08_p1 <- ggplot(weekly_long_p1, aes(x = week_reg, y = Value, color = Ind
     legend.position = "bottom"
   )
 
-aligned_plots <- align_plots(p2, p1, align = "v", axis = "lr")
+aligned_plots <- align_plots(plot_05.08_p2, plot_05.08_p1, align = "v", axis = "lr")
 
 plot_05.08 <- ggdraw() +
   draw_plot(aligned_plots[[1]], 0, 0.7, 1, 0.3) + 
