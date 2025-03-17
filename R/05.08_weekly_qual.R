@@ -42,7 +42,7 @@ weekly_long_p2 <- weekly_long %>%
 max_y_p2 <- max(weekly_long_p2$Value, na.rm = TRUE) * 1.25  # Place text slightly above max value
 
 
-p2 <- ggplot(weekly_long_p2, aes(x = week_reg, y = Value, color = Indicator, group = Indicator)) +
+plot_05.08_p2 <- ggplot(weekly_long_p2, aes(x = week_reg, y = Value, color = Indicator, group = Indicator)) +
   geom_line(size = 0.5) +
   scale_y_continuous(name = "Activity count \nReg and TPT start", limits = c(0, max_y_p2)) + 
   scale_x_date(date_breaks = "1 month", date_labels = "%b %Y") + 
@@ -72,13 +72,18 @@ p2 <- ggplot(weekly_long_p2, aes(x = week_reg, y = Value, color = Indicator, gro
     color = "black", 
     inherit.aes = FALSE)
 
-p1 <- ggplot(weekly_long_p1, aes(x = week_reg, y = Value, color = Indicator, group = Indicator)) +
+plot_05.08_p1 <- ggplot(weekly_long_p1, aes(x = week_reg, y = Value, color = Indicator, group = Indicator)) +
   geom_line(size = 0.6) +
   geom_point(size = 1) +
-  scale_y_continuous(labels = percent_format(scale = 1), name = "Percentage (%)") +  # Left y-axis
+  scale_y_continuous(
+    labels = scales::percent_format(accuracy = 1, scale = 1),
+    limits = c(0, 100),
+    breaks = seq(0, 100, by = 10),
+    minor_breaks = seq(0, 100, by = 5)
+  ) + 
   scale_x_date(date_breaks = "1 month", date_labels = "%b %Y") +
   scale_color_viridis_d(option = "F", begin = 0.2, end = 0.8) +
-  labs(x = "Time (Weeks)", color = "Indicator") +
+  labs(x = "Time (Weeks)", y = "Percentage (%)", color = "Indicator") +
   theme_light() +
   theme(
     plot.title = element_text(size = 10),
