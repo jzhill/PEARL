@@ -17,6 +17,13 @@ library(epikit)
 library(dplyr)
 library(purrr)
 
+# Parameters ----------------------------------------
+
+min_week <- floor_date(min(screening_data$en_date_visit, na.rm = TRUE), unit = "week", week_start = 1)
+max_week <- floor_date(max(screening_data$en_date_visit, na.rm = TRUE), unit = "week", week_start = 1)
+current_week <- floor_date(Sys.Date(), "week", week_start = 1)
+current_date <- format(Sys.Date(), "%Y-%m-%d")
+
 # Screening data checking and consolidating columns ----------------------
 
 # Create helper binary column for TST read done, regardless of result
@@ -37,10 +44,6 @@ treatment_data <- treatment_data %>%
 
 # Weeks for all dates ---------------------------------
 # Use this for all future weekly data analysis
-
-min_week <- floor_date(min(screening_data$en_date_visit, na.rm = TRUE), unit = "week", week_start = 1)
-max_week <- floor_date(max(screening_data$en_date_visit, na.rm = TRUE), unit = "week", week_start = 1)
-current_week <- floor_date(Sys.Date(), "week", week_start = 1)
 
 screening_data <- screening_data %>%
   mutate(week_reg = floor_date(en_date_visit, unit = "week", week_start = 1)) %>%
@@ -436,8 +439,8 @@ compute_metrics <- function(data, week_col = NULL, filter_expr = NULL, distinct_
   return(list(week = week_count, total = total_count))
 }
 
-# Compute metrics for current week and total
-metrics <- list(
+# Compute indicators for current week and total
+indicators <- list(
   "Households Enumerated" = compute_metrics(household_data, week_col = "week_enum"),
   "Households Reached" = compute_metrics(screening_data, week_col = "week_reg", distinct_col = "dwelling_name"),
   "People Registered" = compute_metrics(screening_data, week_col = "week_reg"),
