@@ -12,8 +12,13 @@ tpt_cascade_sd <- screening_data %>%
   filter(en_date_visit <= tpt_outcome_cutoff_date) %>% 
   summarise(
     `TST Positive` = sum(tst_read_positive == "Positive TST", na.rm = TRUE),
-    `Completed TPT Assessment` = sum(prerx_eligible == "No" | prerx_eligible == "Yes", na.rm = TRUE),
-    `Eligible for TPT` = sum(prerx_eligible == "Yes", na.rm = TRUE)
+    `TST Positive, TB ruled out` = sum(tst_read_positive == "Positive TST" & 
+                                         (tb_decision == "Ruled out TB" | ntp_diagnosis == "Ruled out"), na.rm = TRUE),
+    `Completed TPT Assessment` = sum(prerx_eligible == "No" | 
+                                       prerx_eligible == "Yes" | 
+                                       prerx_start == TRUE | 
+                                       exit_reason_screen == "TPT - withdraw consent and prefer not to continue", na.rm = TRUE),
+    `Eligible for TPT` = sum(prerx_eligible == "Yes" | prerx_start == TRUE, na.rm = TRUE)
   ) %>%
   pivot_longer(cols = everything(), names_to = "stage", values_to = "count")
 
@@ -35,6 +40,7 @@ tpt_cascade$stage <- factor(
   tpt_cascade$stage,
   levels = c(
     "TST Positive", 
+    "TST Positive, TB ruled out",
     "Completed TPT Assessment", 
     "Eligible for TPT", 
     "Started TPT", 
@@ -88,14 +94,18 @@ print(expected_ineligible)
 tpt_not_assessed <- screening_data %>%
   filter(
     en_date_visit <= tpt_outcome_cutoff_date,
-    tst_read_positive == "Positive TST",
-    !(prerx_eligible %in% c("Yes", "No"))  # Exclude those with a completed assessment
+    tst_read_positive == "Positive TST" & 
+      (tb_decision == "Ruled out TB" | ntp_diagnosis == "Ruled out"),
+    calc_tpt != "09 Started",
+    exit_reason_screen != "TPT - withdraw consent and prefer not to continue",
+    !(prerx_eligible %in% c("Yes", "No")) 
   ) %>%
   mutate(
     reason = case_when(
       exit_reason_screen %in% c("TPT - lost to follow-up", "Screening - lost to follow-up") ~ "LTFU",
-      exit_reason_screen == "TPT - withdraw consent and prefer not to continue" ~ "Refuse",
       exit_reason_screen == "Died" ~ "Died",
+      calc_tpt %in% c("02 TPT decision", "03 Test HBV", "04 Collect blood", "07 ALT done") ~ "Assessment in progress",
+      calc_tpt == "01 Assess TPT"  ~ "Assessment not started",
       TRUE ~ calc_tpt  # Default to calc_tpt if not in the predefined categories
     )
   ) %>%
@@ -103,6 +113,10 @@ tpt_not_assessed <- screening_data %>%
 
 # Display the tibble
 tpt_not_assessed
+
+# Calculate total ineligible count from the dataset
+total_not_assessed <- sum(tpt_not_assessed$count)
+print(total_not_assessed)
 
 # Plots -------------------------------------
 
@@ -132,8 +146,7 @@ ggplot(tpt_ineligible, aes(x = "", y = n, fill = reason)) +
     fill = "Reason"
   ) +
   scale_fill_viridis_d() +
-  geom_text(aes(label = n), position = position_stack(vjust = 0.5), size = 5, fontface = "bold") +  # Labels inside segments
-  annotate("text", x = 0, y = 0, label = paste("Total =", total_ineligible), size = 6, fontface = "bold", color = "black")
+  geom_text(aes(label = n), position = position_stack(vjust = 0.5), size = 5, fontface = "bold", col = "grey")
 
 # Create a pie chart for reasons not completing TPT assessment
 ggplot(tpt_not_assessed, aes(x = "", y = count, fill = reason)) +
@@ -145,4 +158,4 @@ ggplot(tpt_not_assessed, aes(x = "", y = count, fill = reason)) +
     fill = "Reason"
   ) +
   scale_fill_viridis_d() +
-  geom_text(aes(label = count), position = position_stack(vjust = 0.5), size = 5, fontface = "bold")
+  geom_text(aes(label = count), position = position_stack(vjust = 0.5), size = 5, fontface = "bold", col = "grey")
