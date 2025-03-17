@@ -120,7 +120,7 @@ print(total_not_assessed)
 
 # Plots -------------------------------------
 
-ggplot(tpt_cascade, aes(x = stage, y = count, fill = stage)) +
+plot_05.12 <- ggplot(tpt_cascade, aes(x = stage, y = count, fill = stage)) +
   geom_col(width = 0.6) +  # Make bars wide enough for labels
   geom_text(aes(label = count), vjust = -0.5, size = 5, fontface = "bold") +  # Add data labels above bars
   theme_light() +
@@ -135,9 +135,10 @@ ggplot(tpt_cascade, aes(x = stage, y = count, fill = stage)) +
   ) +
   scale_fill_viridis_d()
 
+plot_05.12
 
 # Full pie chart with labels inside and a legend
-ggplot(tpt_ineligible, aes(x = "", y = n, fill = reason)) +
+plot_05.12_01 <- ggplot(tpt_ineligible, aes(x = "", y = n, fill = reason)) +
   geom_bar(stat = "identity", width = 1) +  # Full pie chart
   coord_polar(theta = "y") +  # Convert to pie chart
   theme_void() +  # Remove all unnecessary grid elements
@@ -148,8 +149,10 @@ ggplot(tpt_ineligible, aes(x = "", y = n, fill = reason)) +
   scale_fill_viridis_d() +
   geom_text(aes(label = n), position = position_stack(vjust = 0.5), size = 5, fontface = "bold", col = "grey")
 
+plot_05.12_01
+
 # Create a pie chart for reasons not completing TPT assessment
-ggplot(tpt_not_assessed, aes(x = "", y = count, fill = reason)) +
+plot_05.12_02 <- ggplot(tpt_not_assessed, aes(x = "", y = count, fill = reason)) +
   geom_bar(stat = "identity", width = 1) +  # Full pie chart
   coord_polar(theta = "y") +  # Convert to pie chart
   theme_void() +  # Remove unnecessary elements
@@ -159,3 +162,18 @@ ggplot(tpt_not_assessed, aes(x = "", y = count, fill = reason)) +
   ) +
   scale_fill_viridis_d() +
   geom_text(aes(label = count), position = position_stack(vjust = 0.5), size = 5, fontface = "bold", col = "grey")
+
+plot_05.12_02
+
+# Save plot images
+current_date <- format(Sys.Date(), "%Y-%m-%d")
+output_dir <- file.path(here("figures"), paste0("Outputs_", current_date))
+
+output_filename <- paste0("plot_05.12_", current_date, ".png")
+ggsave(filename = file.path(output_dir, output_filename), plot = plot_05.12, width = 8, height = 4, dpi = 300)
+
+output_filename <- paste0("plot_05.12_01_", current_date, ".png")
+ggsave(filename = file.path(output_dir, output_filename), plot = plot_05.12_01, width = 8, height = 4, dpi = 300)
+
+output_filename <- paste0("plot_05.12_02_", current_date, ".png")
+ggsave(filename = file.path(output_dir, output_filename), plot = plot_05.12_02, width = 8, height = 4, dpi = 300)
