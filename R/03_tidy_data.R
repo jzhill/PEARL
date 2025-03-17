@@ -239,17 +239,30 @@ treatment_weekly <- treatment_data %>%
 
 # Aggregate Presumptive TB counts by week_reg, ensuring factor labels are retained
 tb_decision_counts <- screening_data %>%
-  mutate(tb_decision = fct_explicit_na(factor(tb_decision), na_level = "Missing")) %>%
+  mutate(
+    tb_decision = fct_explicit_na(factor(tb_decision), na_level = "Missing")
+  ) %>%
   count(week_reg, tb_decision) %>%
   pivot_wider(names_from = tb_decision, values_from = n, values_fill = list(n = 0)) %>%
-  rename_with(~paste0("tbdec_", make.names(.)), -week_reg) # Ensure column names are readable
+  rename(
+    tbdec_prestb = `Presumptive TB`,
+    tbdec_ro = `Ruled out TB`,
+    tbdec_unc = `TB status uncertain`,
+    tbdec_missing = `Missing`
+  ) 
 
 # Aggregate TST Read Positive counts by week_reg, ensuring factor labels are retained
-tst_read_positive_counts <- screening_data %>%
-  mutate(tst_read_positive = fct_explicit_na(factor(tst_read_positive), na_level = "Missing")) %>%
+tst_result_counts <- screening_data %>%
+  mutate(
+    tst_read_positive = fct_explicit_na(factor(tst_read_positive), na_level = "Missing")
+  ) %>%
   count(week_reg, tst_read_positive) %>%
   pivot_wider(names_from = tst_read_positive, values_from = n, values_fill = list(n = 0)) %>%
-  rename_with(~paste0("tst_", make.names(.)), -week_reg) # Ensure column names are readable
+  rename(
+    tst_neg = `Negative TST`,
+    tst_pos = `Positive TST`,
+    tst_missing = `Missing`
+  ) 
 
 ## Join and complete ---------------------------
 
@@ -257,7 +270,7 @@ weekly_data <- weekly_data %>%
   left_join(household_weekly, by = "week_reg") %>%
   left_join(treatment_weekly, by = "week_reg") %>%
   left_join(tb_decision_counts, by = "week_reg") %>%
-  left_join(tst_read_positive_counts, by = "week_reg") %>%
+  left_join(tst_result_counts, by = "week_reg") %>%
   mutate(week_reg = as.Date(week_reg))%>%
   mutate(across(
     c(reg, tst_placed, tst_read, cxr_elig, cxr_done, tbdec, anyrx, xpert, hh_enum, tpt_start),
@@ -273,7 +286,19 @@ weekly_data_na <- weekly_data %>%
 
 # Prepare data for plotting
 weekly_long <- weekly_data %>%
-  select(week_reg, reg, tpt_start, tst_place_pct, tst_read_pct, tbdec_pct, anyrx_pct, xpert_pct, cxr_pct) %>%  # Ensure only needed columns
+  select(
+    week_reg, 
+    reg, 
+    tpt_start, 
+    tst_place_pct, 
+    tst_read_pct, 
+    tbdec_pct, 
+    anyrx_pct, 
+    xpert_pct, 
+    cxr_pct, 
+    starts_with("tbdec_"), 
+    starts_with("tst_")
+  ) %>% 
   pivot_longer(
     cols = -week_reg,
     names_to = "Indicator",
