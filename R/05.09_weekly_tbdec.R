@@ -3,9 +3,9 @@ library(dplyr)
 library(tidyr)
 
 # Process data in a single pipeline
-proportion_data <- screening_data %>% 
+plot_05.09_data <- screening_data %>% 
   filter(week_reg >= (max(week_reg, na.rm = TRUE) - months(6))) %>% 
-  mutate(tb_decision = as.character(tb_decision),  # Ensure it's a character first
+  mutate(tb_decision = as.character(tb_decision),
          tb_decision = replace(tb_decision, is.na(tb_decision), "Missing"),
          tb_decision = factor(tb_decision, levels = c("Missing","TB status uncertain", "Ruled out TB", "Presumptive TB"))) %>% 
   group_by(week_reg, tb_decision) %>% 
@@ -19,8 +19,8 @@ plot_05.09 <- ggplot(proportion_data, aes(x = week_reg, y = proportion, fill = t
   scale_fill_manual(values = c("Missing" = "lightgrey", "TB status uncertain" = "palegreen3", "Ruled out TB" = "lightblue", "Presumptive TB" = "lightcoral")) +
   scale_x_date(date_labels = "%Y-%m-%d", date_breaks = "1 week") +
   labs(x = "Week of Registration", y = "Proportion", 
-       title = "Weekly proportion of TST result (Last 6 Months)",
-       fill = "TST result") +
+       title = "Weekly proportion of TB outcome (Last 6 Months)",
+       fill = "TB decision") +
   theme_light() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 

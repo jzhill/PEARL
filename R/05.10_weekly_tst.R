@@ -3,7 +3,7 @@ library(dplyr)
 library(tidyr)
 
 # Process data in a single pipeline
-proportion_data <- screening_data %>% 
+plot_05.10_data <- screening_data %>% 
   filter(week_reg >= (max(week_reg, na.rm = TRUE) - months(6))) %>% 
   mutate(tst_read_positive = as.character(tst_read_positive),  # Ensure it's a character first
          tst_read_positive = replace(tst_read_positive, is.na(tst_read_positive), "Missing"),
