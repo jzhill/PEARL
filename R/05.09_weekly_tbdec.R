@@ -21,7 +21,14 @@ plot_05.09 <- ggplot(proportion_data, aes(x = week_reg, y = proportion, fill = t
   labs(x = "Week of Registration", y = "Proportion", 
        title = "Weekly proportion of TST result (Last 6 Months)",
        fill = "TST result") +
-  theme_minimal() +
+  theme_light() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
 plot_05.09
+
+# Save plot image
+current_date <- format(Sys.Date(), "%Y-%m-%d")
+output_dir <- file.path(here("figures"), paste0("Outputs_", current_date))
+output_filename <- paste0("plot_05.09_", current_date, ".png")
+
+ggsave(filename = file.path(output_dir, output_filename), plot = plot_05.09, width = 8, height = 5, dpi = 300)

@@ -17,6 +17,13 @@ map_05.07 <- ggplot(layer_betio_ea_3832) +
   scale_fill_gradient(low = "lightgrey", high = "darkgreen", na.value = "lightgrey") +
   labs(title = "Screening Proportion by Enumeration Area (VID 716)",
        fill = "Proportion") +
-  theme_minimal()
+  theme_light()
 
 map_05.07
+
+# Save plot image
+current_date <- format(Sys.Date(), "%Y-%m-%d")
+output_dir <- file.path(here("figures"), paste0("Outputs_", current_date))
+output_filename <- paste0("map_05.07_", current_date, ".png")
+
+ggsave(filename = file.path(output_dir, output_filename), plot = map_05.07, width = 8, height = 4, dpi = 300)

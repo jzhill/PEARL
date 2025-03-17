@@ -17,8 +17,8 @@ max_date <- floor_date(max(village_data_cum_gte_100$week_reg, na.rm = TRUE), uni
 
 # Plot cumulative proportion by week on a single panel
 plot_05.04 <- ggplot(village_data_cum_gte_100, aes(x = week_reg, y = cum_prop, color = village)) + # cum_prop in this line
-  geom_line(size = 1) +
-  geom_point(size = 2) +
+  geom_line(size = 0.6) +
+  geom_point(size = 1) +
   labs(x = "Registration Week",
        y = "Cumulative Proportion Screened",
        title = "Cumulative Proportion of Village Population Screened Over Time",
@@ -32,7 +32,14 @@ plot_05.04 <- ggplot(village_data_cum_gte_100, aes(x = week_reg, y = cum_prop, c
     breaks = seq(0, 1, by = 0.1),
     minor_breaks = seq(0, 1, by = 0.05)
   ) +
-  theme_minimal() +
+  theme_light() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
 plot_05.04
+
+# Save plot image
+current_date <- format(Sys.Date(), "%Y-%m-%d")
+output_dir <- file.path(here("figures"), paste0("Outputs_", current_date))
+output_filename <- paste0("plot_05.04_", current_date, ".png")
+
+ggsave(filename = file.path(output_dir, output_filename), plot = plot_05.04, width = 8, height = 4, dpi = 300)

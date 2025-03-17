@@ -10,7 +10,14 @@ plot_05.03 <- ea_data %>%
   labs(x = "EA", y = "Proportion Registered", 
        title = "Proportion of Population Registered by EA",
        fill = "village") +
-  theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  theme_light() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
 
 plot_05.03
+
+# Save plot image
+current_date <- format(Sys.Date(), "%Y-%m-%d")
+output_dir <- file.path(here("figures"), paste0("Outputs_", current_date))
+output_filename <- paste0("plot_05.03_", current_date, ".png")
+
+ggsave(filename = file.path(output_dir, output_filename), plot = plot_05.03, width = 8, height = 4, dpi = 300)

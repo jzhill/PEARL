@@ -12,9 +12,14 @@ plot_05.02 <- screening_data %>%
     x = "Count",
     y = "Age category"
   ) +
-  theme_minimal() +
+  theme_light() +
   theme(legend.title = element_blank())  # Remove legend title
 
-
-
 plot_05.02
+
+# Save plot image
+current_date <- format(Sys.Date(), "%Y-%m-%d")
+output_dir <- file.path(here("figures"), paste0("Outputs_", current_date))
+output_filename <- paste0("plot_05.02_", current_date, ".png")
+
+ggsave(filename = file.path(output_dir, output_filename), plot = plot_05.02, width = 8, height = 5, dpi = 300)

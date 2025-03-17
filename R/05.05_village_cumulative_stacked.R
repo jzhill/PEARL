@@ -21,7 +21,14 @@ plot_05.05 <- ggplot(village_data_cum, aes(x = week_reg, y = cum_screened, fill 
     limits = c(0, max_val),
     breaks = (seq(0, max_val, by = 1000))
     ) +
-  theme_minimal() +
+  theme_light() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
 plot_05.05
+
+# Save plot image
+current_date <- format(Sys.Date(), "%Y-%m-%d")
+output_dir <- file.path(here("figures"), paste0("Outputs_", current_date))
+output_filename <- paste0("plot_05.05_", current_date, ".png")
+
+ggsave(filename = file.path(output_dir, output_filename), plot = plot_05.05, width = 8, height = 4, dpi = 300)
