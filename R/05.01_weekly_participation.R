@@ -1,9 +1,7 @@
-# Load necessary libraries
 library(ggplot2)
 library(dplyr)
 library(here)
 
-# Define the plot
 plot_05.01 <- ggplot(weekly_data, aes(x = week_reg)) +
   
   geom_line(aes(y = hh_enum, color = "Households Enumerated"), size = 0.4) +
@@ -38,7 +36,6 @@ plot_05.01 <- ggplot(weekly_data, aes(x = week_reg)) +
 
 plot_05.01
 
-# Save plot image
 current_date <- format(Sys.Date(), "%Y-%m-%d")
 output_dir <- file.path(here("figures"), paste0("Outputs_", current_date))
 output_filename <- paste0("plot_05.01_", current_date, ".png")

@@ -32,7 +32,7 @@ indicator_labels <- c(
 )
 
 weekly_long_p1 <- weekly_long %>% 
-  filter(!(Indicator %in% c("reg", "tpt_start"))) %>% 
+  filter(Indicator %in% c("anyrx_pct", "tbdec_pct", "tst_read_pct", "tst_place_pct", "cxr_pct", "xpert_pct")) %>% 
   mutate(Indicator = recode(Indicator, !!!indicator_labels))
 
 weekly_long_p2 <- weekly_long %>%

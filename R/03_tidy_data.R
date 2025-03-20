@@ -20,7 +20,9 @@ library(purrr)
 # Parameters ----------------------------------------
 
 min_week <- floor_date(min(screening_data$en_date_visit, na.rm = TRUE), unit = "week", week_start = 1)
-max_week <- floor_date(max(screening_data$en_date_visit, na.rm = TRUE), unit = "week", week_start = 1)
+min_month <- floor_date(min(screening_data$en_date_visit, na.rm = TRUE), unit = "month")
+max_week <- floor_date(max(screening_data$en_date_visit, na.rm = TRUE), unit = "week", week_start = 1) - weeks(1)
+max_month <- floor_date(max(screening_data$en_date_visit, na.rm = TRUE), unit = "month") - months(1)
 current_week <- floor_date(Sys.Date(), "week", week_start = 1)
 current_date <- format(Sys.Date(), "%Y-%m-%d")
 
@@ -85,6 +87,8 @@ household_data <- household_data %>%
 
 # Lookup village and EA for each participant from household database -----------------------
 # NOTE: village and EA data capture in screening data is unreliable
+# Coalesce will ensure we use the household EA first, and fill the captured EA only if household is empty
+# Likewise for village
 
 screening_data <- screening_data %>%
   select(-any_of(c("res_village_hh", "ea_number_hh"))) %>%
@@ -193,7 +197,8 @@ ea_data <- ea_data %>%
 # Note denominator is eligible population
 ea_data <- ea_data %>%
   mutate(
-    prop_reg = round(ifelse(pop_elig_new == 0, NA, pop_reg_enum_new / pop_elig_new), 2) %>% replace_na(NA_real_)
+    prop_reg_enum = round(ifelse(pop_elig_new == 0, NA, pop_reg_enum_new / pop_elig_new), 2) %>% replace_na(NA_real_),
+    prop_reg_screen = round(ifelse(pop_elig_new == 0, NA, pop_reg_screen_new / pop_elig_new), 2) %>% replace_na(NA_real_),
   )
 
 # Weekly Aggregation ------------------------------------------------------

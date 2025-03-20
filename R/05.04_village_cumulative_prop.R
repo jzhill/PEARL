@@ -2,21 +2,17 @@ library(tidyverse)
 library(lubridate)
 library(ggplot2)
 
-# Note: this is based on 2020 census population data - just an estimate
+# Note: denominator is from 2020 census population data - population has grown!
 
 # Include only villages with >= 100 people registered
-village_data_cum_gte_100 <- village_data_cum %>%
+plot_05.04_data <- village_data_cum %>%
   filter(village %in% villages_gte_100) %>%
   select(-date_started) %>% 
   left_join(village_data %>% select(village, date_started), by = "village") %>%
   filter(week_reg >= date_started)  # Remove points before village started
 
-# Define min and max date range for x-axis
-min_date <- floor_date(min(village_data_cum_gte_100$week_reg, na.rm = TRUE), unit = "month") - months(1)
-max_date <- floor_date(max(village_data_cum_gte_100$week_reg, na.rm = TRUE), unit = "month") + months(1)
-
 # Plot cumulative proportion by week on a single panel
-plot_05.04 <- ggplot(village_data_cum_gte_100, aes(x = week_reg, y = cum_prop, color = village)) + # cum_prop in this line
+plot_05.04 <- ggplot(plot_05.04_data, aes(x = week_reg, y = cum_prop, color = village)) + # cum_prop in this line
   geom_line(size = 0.6) +
   geom_point(size = 1) +
   labs(x = "Registration Week",
@@ -25,7 +21,7 @@ plot_05.04 <- ggplot(village_data_cum_gte_100, aes(x = week_reg, y = cum_prop, c
        subtitle = "Denominator: 2020 population",
        color = "Village") +
   scale_x_date(
-    breaks = seq(from = min_date, to = max_date, by = "month")
+    breaks = seq(from = min_month, to = max_week, by = "month")
   ) +
   scale_y_continuous(
     limits = c(0, 1),

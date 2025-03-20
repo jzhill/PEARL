@@ -3,9 +3,7 @@ library(lubridate)
 library(ggplot2)
 
 # Define min and max axis ranges
-min_date <- floor_date(min(village_data_cum$week_reg, na.rm = TRUE), unit = "month") - months(1)
-max_date <- max(village_data_cum$week_reg, na.rm = TRUE)
-max_val <- (ceiling(sum(village_data_cum$n_screened, na.rm = TRUE) / 1000) * 1000) + 1
+plot_05.05_maxy <- 16000
 
 # Create the cumulative stacked area plot (y-axis = cumulative count).
 plot_05.05 <- ggplot(village_data_cum, aes(x = week_reg, y = cum_screened, fill = village)) +
@@ -15,20 +13,26 @@ plot_05.05 <- ggplot(village_data_cum, aes(x = week_reg, y = cum_screened, fill 
        title = "Cumulative Screening by Village",
        fill = "Village") +
   scale_x_date(
-    breaks = seq(from = min_date, to = max_date, by = "month")
+    breaks = seq(from = min_month, to = max_week, by = "month")
   ) +
   scale_y_continuous(
-    limits = c(0, max_val),
-    breaks = (seq(0, max_val, by = 1000))
+    limits = c(0, plot_05.05_maxy),
+    breaks = (seq(0, plot_05.05_maxy, by = 1000))
     ) +
   theme_light() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_hline(yintercept = 15000) +
+  annotate(
+    "text", label = "Betio target = 15,000",
+    x = min_month + months(6), y = 14500, size = 4
+  )
+  
 
 plot_05.05
 
 # Save plot image
-current_date <- format(Sys.Date(), "%Y-%m-%d")
-output_dir <- file.path(here("figures"), paste0("Outputs_", current_date))
-output_filename <- paste0("plot_05.05_", current_date, ".png")
+max_week <- format(Sys.Date(), "%Y-%m-%d")
+output_dir <- file.path(here("figures"), paste0("Outputs_", max_week))
+output_filename <- paste0("plot_05.05_", max_week, ".png")
 
 ggsave(filename = file.path(output_dir, output_filename), plot = plot_05.05, width = 8, height = 4, dpi = 300)
