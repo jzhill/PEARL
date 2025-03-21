@@ -16,14 +16,14 @@ library(tidyverse)
 library(epikit)
 library(dplyr)
 library(purrr)
+library(sf)
 
 # Parameters ----------------------------------------
 
 min_week <- floor_date(min(screening_data$en_date_visit, na.rm = TRUE), unit = "week", week_start = 1)
 min_month <- floor_date(min(screening_data$en_date_visit, na.rm = TRUE), unit = "month")
-max_week <- floor_date(max(screening_data$en_date_visit, na.rm = TRUE), unit = "week", week_start = 1) - weeks(1)
-max_month <- floor_date(max(screening_data$en_date_visit, na.rm = TRUE), unit = "month") - months(1)
-current_week <- floor_date(Sys.Date(), "week", week_start = 1)
+max_week <- floor_date(max(screening_data$en_date_visit, na.rm = TRUE), unit = "week", week_start = 1)
+max_month <- floor_date(max(screening_data$en_date_visit, na.rm = TRUE), unit = "month")
 current_date <- format(Sys.Date(), "%Y-%m-%d")
 
 # Screening data checking and consolidating columns ----------------------
@@ -207,7 +207,7 @@ ea_data <- ea_data %>%
 
 # Aggregate all required counts at the weekly level
 weekly_data <- screening_data %>%
-  filter(week_reg <= max_week) %>%  # drop future weeks
+  filter(week_reg <= max_week) %>%  # drop future weeks which are errors
   group_by(week_reg) %>%
   summarise(
     reg = n(),
@@ -422,9 +422,9 @@ village_order_cum <- c(setdiff(village_order_cum, "Other or unknown"), "Other or
 village_data_cum <- village_data_cum %>%
   mutate(village = factor(village, levels = village_order_cum))
 
-# GIS data tidy -------------------------
+# GIS data tidy ----------------------------------------------------------------------
 
-## Join EA data to EA layer -------------------------------
+## Join EA data to EA layer -------------------------------------------------------
 
 # Ensure both columns have the same type for joining
 layer_ki_ea_3832$ea_2020 <- as.character(layer_ki_ea_3832$ea_2020)
@@ -440,16 +440,90 @@ layer_ki_ea_3832 <- layer_ki_ea_3832 %>%
 layer_betio_ea_3832 <- layer_ki_ea_3832 %>%
   filter(vid == 716)
 
-# Metrics for tables ----------------------------
+## Clean household coordinates -------------------------------------------------
 
-## Headline numbers for current week and total -------------------------------------
+# Define office location as sf point (in EPSG:4326 first)
+office_point <- st_sfc(
+  st_point(c(172.943185325, 1.352152047)),
+  crs = 4326
+) %>%
+  st_transform(crs = 3832)
+
+# Create spatial object of GPS coordinates only
+hh_gps_sf <- household_data %>%
+  mutate(
+    gps_lat = as.numeric(hh_latitude),
+    gps_long = as.numeric(hh_longitude)
+  ) %>%
+  filter(!is.na(gps_lat) & !is.na(gps_long)) %>%
+  st_as_sf(coords = c("gps_long", "gps_lat"), crs = 4326) %>%
+  st_transform(crs = 3832) 
+
+# Flag whether the GPS record is valid or not
+hh_gps_sf <- hh_gps_sf %>%
+  mutate(
+    dist_to_office = as.numeric(st_distance(geometry, office_point)),
+    near_office = dist_to_office < 200,
+    inside_ea = lengths(st_within(geometry, layer_betio_ea_3832)) > 0,
+    gps_valid = !near_office & inside_ea
+  )
+
+# Join back to household_data using record_id
+household_data <- household_data %>%
+  left_join(
+    hh_gps_sf %>%
+      st_drop_geometry() %>%
+      select(record_id, gps_valid),
+    by = "record_id"
+  ) 
+
+# Create clean lat/long columns using conditional coalescing and record source
+household_data <- household_data %>%
+  mutate(
+    hh_latitude = as.numeric(hh_latitude),
+    hh_longitude = as.numeric(hh_longitude),
+    hh_census_lat = as.numeric(hh_census_lat),
+    hh_census_long = as.numeric(hh_census_long),
+    lat = coalesce(
+      hh_census_lat,
+      ifelse(gps_valid, hh_latitude, NA)
+    ),
+    long = coalesce(
+      hh_census_long,
+      ifelse(gps_valid, hh_longitude, NA)
+    ),
+    coord_source = case_when(
+      !is.na(hh_census_lat) & !is.na(hh_census_long) ~ "census",
+      gps_valid ~ "gps",
+      TRUE ~ "none"
+    )
+  )
+
+## Create hh layer -----------------------------------------------------------------
+
+layer_hh_betio_3832 <- household_data %>%
+  filter(!is.na(lat) & !is.na(long)) %>%
+  st_as_sf(coords = c("long", "lat"), crs = 4326) %>%
+  st_transform(crs = st_crs(layer_betio_ea_3832))
+
+## Join clean coordinates to screening data for mapping --------------------------------------
+
+screening_data <- screening_data %>%
+  left_join(
+    household_data %>% select(record_id, lat, long, coord_source),
+    by = c("dwelling_id" = "record_id")
+  )
+
+# Metrics for tables -------------------------------------------------------------------------
+
+## Headline numbers for current week and total --------------------------------------------------
 
 # Function to compute weekly and total metrics
 compute_metrics <- function(data, week_col = NULL, filter_expr = NULL, distinct_col = NULL) {
   
   # Apply weekly filter if week_col is provided
   if (!is.null(week_col)) {
-    data_week <- data %>% filter(.data[[week_col]] == current_week)
+    data_week <- data %>% filter(.data[[week_col]] == max_week)
   } else {
     data_week <- data
   }

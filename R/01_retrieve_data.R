@@ -71,7 +71,7 @@ for (report in names(tokens)) {
     raw_or_label_headers = "label",
     raw_or_label = "label",
     verbose = TRUE,
-    config_options = list(timeout = 20)
+    config_options = list(timeout = 60)
   )$data
   
   # Save the report data

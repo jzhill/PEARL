@@ -43,15 +43,15 @@ max_y_p2 <- max(weekly_long_p2$Value, na.rm = TRUE) * 1.25  # Place text slightl
 
 
 plot_05.08_p2 <- ggplot(weekly_long_p2, aes(x = week_reg, y = Value, color = Indicator, group = Indicator)) +
-  geom_line(size = 0.5) +
+  geom_line(size = 0.7) +
   scale_y_continuous(name = "Activity count \nReg and TPT start", limits = c(0, max_y_p2)) + 
   scale_x_date(date_breaks = "1 month", date_labels = "%b %Y") + 
   scale_color_manual(values = c("People Registered" = "grey70", "Started Treatment" = "grey40")) +
   labs(color = "Indicator") +
   theme_light() +
   theme(
-    axis.title.y = element_text(size = 8),
-    axis.text.y = element_text(size = 7),
+    axis.title.y = element_text(size = 10),
+    axis.text.y = element_text(size = 9),
     axis.text.x = element_blank(),  # Remove x-axis text
     axis.ticks.x = element_blank(),
     axis.title.x = element_blank(),
@@ -68,13 +68,13 @@ plot_05.08_p2 <- ggplot(weekly_long_p2, aes(x = week_reg, y = Value, color = Ind
     angle = 0,
     hjust = 0, 
     vjust = 0, 
-    size = 2.5, 
+    size = 3.5, 
     color = "black", 
     inherit.aes = FALSE)
 
 plot_05.08_p1 <- ggplot(weekly_long_p1, aes(x = week_reg, y = Value, color = Indicator, group = Indicator)) +
-  geom_line(size = 0.6) +
-  geom_point(size = 1) +
+  geom_line(size = 0.8) +
+  geom_point(size = 1.5) +
   scale_y_continuous(
     labels = scales::percent_format(accuracy = 1, scale = 1),
     limits = c(0, 100),
@@ -86,11 +86,11 @@ plot_05.08_p1 <- ggplot(weekly_long_p1, aes(x = week_reg, y = Value, color = Ind
   labs(x = "Time (Weeks)", y = "Percentage (%)", color = "Indicator") +
   theme_light() +
   theme(
-    plot.title = element_text(size = 10),
-    axis.title = element_text(size = 8),
-    axis.text = element_text(size = 7),
+    plot.title = element_text(size = 11),
+    axis.title = element_text(size = 10),
+    axis.text = element_text(size = 9),
     legend.title = element_blank(),
-    legend.text = element_text(size = 7),
+    legend.text = element_text(size = 9),
     axis.text.x = element_text(angle = 45, hjust = 1),
     legend.position = "bottom"
   )
