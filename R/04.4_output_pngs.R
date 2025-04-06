@@ -10,9 +10,24 @@ if (!dir_exists(output_dir)) {
   dir_create(output_dir)
 }
 
-# Run all relevant scripts from ~/R with prefixes 05 or 06
+# Detect and list all relevant scripts
 scripts_to_run <- list.files(here("R"), pattern = "^(05|06).*\\.R$", full.names = TRUE)
-message("Running scripts: ", paste(basename(scripts_to_run), collapse = ", "))
-lapply(scripts_to_run, source)
+message("Detected scripts: ", paste(basename(scripts_to_run), collapse = ", "))
 
-message("All plots and tables have been generated and saved in: ", output_dir)
+# Run each script and show progress
+for (script in scripts_to_run) {
+  script_name <- basename(script)
+  message("▶ Running: ", script_name)
+  
+  tryCatch(
+    {
+      source(script)
+      message("✔ Completed: ", script_name)
+    },
+    error = function(e) {
+      message("❌ Error in ", script_name, ": ", e$message)
+    }
+  )
+}
+
+message("All scripts processed. Outputs saved in: ", output_dir)
