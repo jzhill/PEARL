@@ -6,9 +6,9 @@ library(officer)
 
 # Create summary table
 summary_table <- tibble(
-  Indicator = names(metrics),
-  This_Week = sapply(metrics, function(x) x$week),
-  Total_Count = sapply(metrics, function(x) x$total)
+  Indicator = names(indicators),
+  This_Week = sapply(indicators, function(x) x$week),
+  Total_Count = sapply(indicators, function(x) x$total)
 )
 
 # Format and enhance flextable
@@ -18,7 +18,7 @@ table_06.01 <- summary_table %>%
   # Header rows
   set_header_labels(Indicator = "Indicator", This_Week = "This Week", Total_Count = "Total Count") %>%
   add_header_row(
-    values = paste("Summary of PEARL activity for week starting", format(current_week, "%Y-%m-%d")),
+    values = paste("Summary of PEARL activity for week starting", format(max_week, "%Y-%m-%d")),
     colwidths = 3  # Title spans all three columns
   ) %>%
   

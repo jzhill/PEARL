@@ -13,7 +13,7 @@ tpt_outcome_labels <- c(
   "Not yet assigned" = "Not yet assigned"
 )
 
-# Step 1: Create a tibble with counts by month
+# Create a tibble with counts by month
 tpt_counts <- treatment_data %>%
   mutate(
     month = floor_date(tpt_start_date, "month"),  # Convert to month grouping

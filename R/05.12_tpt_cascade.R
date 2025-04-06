@@ -49,9 +49,6 @@ tpt_cascade$stage <- factor(
   )
 )
 
-# Display table
-print(tpt_cascade)
-
 # Reasons ineligible -----------------------------------
 
 tpt_ineligible <- screening_data %>%

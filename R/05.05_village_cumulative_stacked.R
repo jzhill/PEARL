@@ -31,8 +31,8 @@ plot_05.05 <- ggplot(village_data_cum, aes(x = week_reg, y = cum_screened, fill 
 plot_05.05
 
 # Save plot image
-max_week <- format(Sys.Date(), "%Y-%m-%d")
-output_dir <- file.path(here("figures"), paste0("Outputs_", max_week))
-output_filename <- paste0("plot_05.05_", max_week, ".png")
+current_date <- format(Sys.Date(), "%Y-%m-%d")
+output_dir <- file.path(here("figures"), paste0("Outputs_", current_date))
+output_filename <- paste0("plot_05.05_", current_date, ".png")
 
 ggsave(filename = file.path(output_dir, output_filename), plot = plot_05.05, width = 8, height = 4, dpi = 300)

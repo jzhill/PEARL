@@ -69,7 +69,7 @@ table_06.03 <- treatment_final_table %>%
   align(align = "center", part = "all")  # Center-align all columns
 
 # Print flextable
-table_treatment
+table_06.03
 
 # Save flextable
 current_date <- format(Sys.Date(), "%Y-%m-%d")

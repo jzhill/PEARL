@@ -4,7 +4,7 @@ library(tidyr)
 
 # Process data in a single pipeline
 plot_05.09_data <- screening_data %>% 
-  filter(week_reg >= (max(week_reg, na.rm = TRUE) - months(6))) %>% 
+  filter(week_reg >= (max(week_reg[!is.na(week_reg)]) %m-% months(6))) %>%
   mutate(tb_decision = as.character(tb_decision),
          tb_decision = replace(tb_decision, is.na(tb_decision), "Missing"),
          tb_decision = factor(tb_decision, levels = c("Missing","TB status uncertain", "Ruled out TB", "Presumptive TB"))) %>% 

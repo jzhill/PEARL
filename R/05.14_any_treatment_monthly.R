@@ -57,7 +57,7 @@ plot_05.14 <- ggplot(treatment_plot_data, aes(x = month, y = proportion, fill = 
   )
 
 # Print the plot
-print(plot_treatment)
+print(plot_05.14)
 
 # Save plot images
 current_date <- format(Sys.Date(), "%Y-%m-%d")
