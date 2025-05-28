@@ -59,7 +59,10 @@ tpt_final_table <- tpt_counts %>%
 table_06.02 <- tpt_final_table %>%
   flextable() %>%
   set_caption("TPT Outcome Counts by Month (With Totals and Row-Wise Percentages)") %>%
-  theme_vanilla() %>%  # Apply a clean table theme
+  theme_vanilla() %>%
+  bg(part = "header", bg = "#F2F2F2") %>%  # Light grey header background
+  bg(part = "body", bg = "white") %>%
+  bold(part = "header") %>%               # Bold header text
   autofit() %>%  # Auto-adjust column widths
   bold(part = "header") %>%  # Bold the header row
   bold(i = nrow(tpt_final_table), part = "body") %>%  # Bold the total row

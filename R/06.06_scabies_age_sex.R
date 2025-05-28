@@ -89,3 +89,11 @@ table_06.06 <- scabies_final_all %>%
   autofit()
 
 table_06.06
+
+# Save flextable
+current_date <- format(Sys.Date(), "%Y-%m-%d")
+output_dir <- file.path(here("figures"), paste0("Outputs_", current_date))
+output_filename <- paste0("table_06.06_", current_date, ".png")
+
+save_as_image(table_06.06, path = file.path(output_dir, output_filename))
+

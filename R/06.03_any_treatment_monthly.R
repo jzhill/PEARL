@@ -62,7 +62,10 @@ treatment_final_table <- treatment_counts %>%
 table_06.03 <- treatment_final_table %>%
   flextable() %>%
   set_caption("Treatment Proportions by Month (Including Any Treatment)") %>%
-  theme_vanilla() %>%  # Apply a clean table theme
+  theme_vanilla() %>%
+  bg(part = "header", bg = "#F2F2F2") %>%  # Light grey header background
+  bg(part = "body", bg = "white") %>%
+  bold(part = "header") %>%               # Bold header text
   autofit() %>%  # Auto-adjust column widths
   bold(part = "header") %>%
   bold(i = nrow(treatment_final_table), part = "body") %>%  # Bold the total row

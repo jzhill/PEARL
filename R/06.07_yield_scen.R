@@ -19,17 +19,17 @@ yield_table <- screening_data %>%
     pearl_cases = sum(ntp_diagnosis == "Confirmed", na.rm = TRUE)
   ) %>%
   mutate(
-    Symptom_Yield = round(sx_cases / sx_n * 100, 2),
-    Symptom_NNS = round(ifelse(sx_cases > 0, sx_n / sx_cases, Inf), 1),
-    Xray_Yield = round(xr_cases / xr_n * 100, 2),
-    Xray_NNS = round(ifelse(xr_cases > 0, xr_n / xr_cases, Inf), 1),
+    Symptom_Yield = round(sx_cases / N * 100, 2),
+    Symptom_NNS = round(ifelse(sx_cases > 0, N / sx_cases, Inf), 1),
+    Xray_Yield = round(xr_cases / N * 100, 2),
+    Xray_NNS = round(ifelse(xr_cases > 0, N / xr_cases, Inf), 1),
     PEARL_Yield = round(pearl_cases / N * 100, 2),
     PEARL_NNS = round(ifelse(pearl_cases > 0, N / pearl_cases, Inf), 1)
   ) %>%
   select(age_cat, N,
-         Symptom_Yield, Symptom_NNS,
-         Xray_Yield, Xray_NNS,
-         PEARL_Yield, PEARL_NNS) %>%
+         sx_cases, Symptom_Yield, Symptom_NNS,
+         xr_cases, Xray_Yield, Xray_NNS,
+         pearl_cases, PEARL_Yield, PEARL_NNS) %>%
   ungroup()
 
 # Create row 10+
@@ -44,18 +44,18 @@ yield_10plus <- screening_data %>%
     pearl_cases = sum(ntp_diagnosis == "Confirmed", na.rm = TRUE)
   ) %>%
   mutate(
-    Symptom_Yield = round(sx_cases / sx_n * 100, 2),
-    Symptom_NNS = round(ifelse(sx_cases > 0, sx_n / sx_cases, Inf), 1),
-    Xray_Yield = round(xr_cases / xr_n * 100, 2),
-    Xray_NNS = round(ifelse(xr_cases > 0, xr_n / xr_cases, Inf), 1),
+    Symptom_Yield = round(sx_cases / N * 100, 2),
+    Symptom_NNS = round(ifelse(sx_cases > 0, N / sx_cases, Inf), 1),
+    Xray_Yield = round(xr_cases / N * 100, 2),
+    Xray_NNS = round(ifelse(xr_cases > 0, N / xr_cases, Inf), 1),
     PEARL_Yield = round(pearl_cases / N * 100, 2),
     PEARL_NNS = round(ifelse(pearl_cases > 0, N / pearl_cases, Inf), 1),
     age_cat = "Ages 10+"
   ) %>%
   select(age_cat, N,
-         Symptom_Yield, Symptom_NNS,
-         Xray_Yield, Xray_NNS,
-         PEARL_Yield, PEARL_NNS)
+         sx_cases, Symptom_Yield, Symptom_NNS,
+         xr_cases, Xray_Yield, Xray_NNS,
+         pearl_cases, PEARL_Yield, PEARL_NNS)
 
 # Bind total row
 yield_table <- bind_rows(yield_table, yield_10plus)
@@ -72,18 +72,18 @@ yield_total <- screening_data %>%
     pearl_cases = sum(ntp_diagnosis == "Confirmed", na.rm = TRUE)
   ) %>%
   mutate(
-    Symptom_Yield = round(sx_cases / sx_n * 100, 2),
-    Symptom_NNS = round(ifelse(sx_cases > 0, sx_n / sx_cases, Inf), 1),
-    Xray_Yield = round(xr_cases / xr_n * 100, 2),
-    Xray_NNS = round(ifelse(xr_cases > 0, xr_n / xr_cases, Inf), 1),
+    Symptom_Yield = round(sx_cases / N * 100, 2),
+    Symptom_NNS = round(ifelse(sx_cases > 0, N / sx_cases, Inf), 1),
+    Xray_Yield = round(xr_cases / N * 100, 2),
+    Xray_NNS = round(ifelse(xr_cases > 0, N / xr_cases, Inf), 1),
     PEARL_Yield = round(pearl_cases / N * 100, 2),
     PEARL_NNS = round(ifelse(pearl_cases > 0, N / pearl_cases, Inf), 1),
     age_cat = "All"
   ) %>%
   select(age_cat, N,
-         Symptom_Yield, Symptom_NNS,
-         Xray_Yield, Xray_NNS,
-         PEARL_Yield, PEARL_NNS)
+         sx_cases, Symptom_Yield, Symptom_NNS,
+         xr_cases, Xray_Yield, Xray_NNS,
+         pearl_cases, PEARL_Yield, PEARL_NNS)
 
 # Bind total row
 yield_table <- bind_rows(yield_table, yield_total)
@@ -97,28 +97,34 @@ yield_table
 table_06.07 <- flextable(yield_table) %>%
   add_header_row(
     values = c("", "", "Symptom Only", "X-ray (10+)", "PEARL"),
-    colwidths = c(1, 1, 2, 2, 2)
+    colwidths = c(1, 1, 3, 3, 3)
   ) %>%
   set_header_labels(
     age_cat = "Age Group",
     N = "N",
+    sx_cases = "Cases",
     Symptom_Yield = "Yield (%)",
     Symptom_NNS = "NNS",
+    xr_cases = "Cases",
     Xray_Yield = "Yield (%)",
     Xray_NNS = "NNS",
+    pearl_cases = "Cases",
     PEARL_Yield = "Yield (%)",
     PEARL_NNS = "NNS"
   ) %>%
   theme_vanilla() %>%
+  bg(part = "header", bg = "#F2F2F2") %>%  # Light grey header background
+  bg(part = "body", bg = "white") %>%
+  bold(part = "header") %>%               # Bold header text
   align(j = c("N", 
-              "Symptom_Yield", "Symptom_NNS",
-              "Xray_Yield", "Xray_NNS",
-              "PEARL_Yield", "PEARL_NNS"),
+              "sx_cases", "Symptom_Yield", "Symptom_NNS",
+              "xr_cases", "Xray_Yield", "Xray_NNS",
+              "pearl_cases", "PEARL_Yield", "PEARL_NNS"),
         align = "center", part = "all") %>%
-  colformat_num(j = c("N",
-                      "Symptom_Yield", "Symptom_NNS",
-                      "Xray_Yield", "Xray_NNS",
-                      "PEARL_Yield", "PEARL_NNS"),
+  colformat_num(j = c("N", 
+                      "sx_cases", "Symptom_Yield", "Symptom_NNS",
+                      "xr_cases", "Xray_Yield", "Xray_NNS",
+                      "pearl_cases", "PEARL_Yield", "PEARL_NNS"),
                 digits = 2, na_str = "–") %>%
   set_table_properties(layout = "autofit")
 
