@@ -71,7 +71,7 @@ for (report in names(tokens)) {
     raw_or_label_headers = "label",
     raw_or_label = "label",
     verbose = TRUE,
-    config_options = list(timeout = 60)
+    config_options = list(timeout = 100)
   )$data
   
   # Save the report data
@@ -85,7 +85,7 @@ for (report in names(tokens)) {
     redcap_uri = uri,
     token = tokens[[report]],
     verbose = TRUE,
-    config_options = list(timeout = 10)
+    config_options = list(timeout = 100)
   )$data
   
   # Save the data dictionary in the /dds/ folder

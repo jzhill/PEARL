@@ -31,36 +31,53 @@ tb_summary_wide <- tb_summary_long %>%
 
 # Define the correct column order and header labels
 col_keys <- c("age_cat", 
+              "M_valid_outcome_n", 
               "M_presumptive_n", "M_percent_presumptive", 
               "M_confirmed_n", "M_percent_confirmed", 
-              "M_valid_outcome_n", 
+              "F_valid_outcome_n",
               "F_presumptive_n", "F_percent_presumptive", 
-              "F_confirmed_n", "F_percent_confirmed", 
-              "F_valid_outcome_n")
+              "F_confirmed_n", "F_percent_confirmed")
 
 header_labels <- c(
   age_cat = "Age Group",
+  M_valid_outcome_n = "",
   M_presumptive_n = "n", M_percent_presumptive = "%",
   M_confirmed_n = "n", M_percent_confirmed = "%",
-  M_valid_outcome_n = "Valid n",
+  F_valid_outcome_n = "",
   F_presumptive_n = "n", F_percent_presumptive = "%",
-  F_confirmed_n = "n", F_percent_confirmed = "%",
-  F_valid_outcome_n = "Valid n"
+  F_confirmed_n = "n", F_percent_confirmed = "%"
 )
 
 # Create flextable
 flextable(tb_summary_wide, col_keys = col_keys) %>%
   set_header_labels(values = header_labels) %>%
   add_header_row(
-    values = c("Age Group", "Presumptive TB", "%", "Confirmed TB", "%", "Valid n",
-               "Presumptive TB", "%", "Confirmed TB", "%", "Valid n"),
-    colwidths = rep(1, 11)  # Each header value spans exactly 1 column
+    values = c("Age Group", 
+               "N", "Screened Positive", "Confirmed TB",
+               "N", "Screened Positive", "Confirmed TB"),
+    colwidths = c(1, 1, 2, 2, 1, 2, 2)  # Each header value spans exactly 1 column
   ) %>%
   add_header_row(
     values = c("Age Group", "Male", "Female"),
     colwidths = c(1, 5, 5)
   ) %>%
   merge_v(part = "header") %>%
-  theme_booktabs() %>%
-  bg(bg = "white", part = "all") %>%
-  autofit()
+  theme_vanilla() %>%
+  bg(part = "header", bg = "#F2F2F2") %>%  # Light grey header background
+  bg(part = "body", bg = "white") %>%
+  bold(part = "header") %>%               # Bold header text
+  align(j = c("M_valid_outcome_n", 
+              "M_presumptive_n", "M_percent_presumptive", 
+              "M_confirmed_n", "M_percent_confirmed", 
+              "F_valid_outcome_n",
+              "F_presumptive_n", "F_percent_presumptive", 
+              "F_confirmed_n", "F_percent_confirmed"),
+        align = "center", part = "all") %>%
+  colformat_num(j = c("M_valid_outcome_n", 
+                      "M_presumptive_n", "M_percent_presumptive", 
+                      "M_confirmed_n", "M_percent_confirmed", 
+                      "F_valid_outcome_n",
+                      "F_presumptive_n", "F_percent_presumptive", 
+                      "F_confirmed_n", "F_percent_confirmed"),
+                digits = 2, na_str = "–") %>%
+  set_table_properties(layout = "autofit")
