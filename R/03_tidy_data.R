@@ -422,6 +422,105 @@ village_order_cum <- c(setdiff(village_order_cum, "Other or unknown"), "Other or
 village_data_cum <- village_data_cum %>%
   mutate(village = factor(village, levels = village_order_cum))
 
+# ---- Side-effect analysis columns ------------------------------
+
+timepoints <- c("1m", "3m", "4m", "ae")
+groups     <- c("dili_sx", "rhs_sx", "csx")
+
+# 1) Long table of side-effect checkbox values (logical)
+sx_long <- treatment_data %>%
+  select(record_id,
+         matches(paste0("^tpt_(", paste(timepoints, collapse="|"), ")_(",
+                        paste(groups, collapse="|"), ")_.+$"))) %>%
+  pivot_longer(
+    cols = -record_id,
+    names_to = c("tp", "grp", "opt"),
+    names_pattern = paste0("^tpt_(", paste(timepoints, collapse="|"),
+                           ")_(", paste(groups, collapse="|"), ")_(.+)$"),
+    values_to = "val"
+  ) %>%
+  mutate(val = as.logical(val))
+
+# (1) per timepoint × group: ANY TRUE among non-"none" options
+# (2) per timepoint × group: ALL FALSE across *all* options (incl. "none")
+#     - TRUE when true_cnt == 0 and at least one FALSE observed
+#     - NA when every option at that tp+grp is NA (rare; included for completeness)
+
+sx_tp_grp <- sx_long %>%
+  group_by(record_id, tp, grp) %>%
+  summarise(
+    any_true_non_none = any(val[opt != "none"], na.rm = TRUE),
+    true_cnt_all = sum(val %in% TRUE,  na.rm = TRUE),
+    false_cnt_all = sum(val %in% FALSE, na.rm = TRUE),
+    non_na_all = sum(!is.na(val)),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    all_false = case_when(
+      non_na_all == 0 ~ NA,     # no info at all (unlikely w/ REDCap exports)
+      true_cnt_all == 0 & false_cnt_all > 0 ~ TRUE,
+      TRUE ~ FALSE
+    )
+  )
+
+# Wide columns for (1) and (2)
+sx_tp_grp_any_true_wide <- sx_tp_grp %>%
+  transmute(record_id,
+            name = paste0(tp, "_", grp, "_any_true"),
+            value = any_true_non_none) %>%
+  pivot_wider(names_from = name, values_from = value)
+
+sx_tp_grp_all_false_wide <- sx_tp_grp %>%
+  transmute(record_id,
+            name = paste0(tp, "_", grp, "_all_false"),
+            value = all_false) %>%
+  pivot_wider(names_from = name, values_from = value)
+
+# (3) per option across timepoints: *_ever (exclude "none")
+
+sx_ever_wide <- sx_long %>%
+  filter(opt != "none") %>%
+  group_by(record_id, grp, opt) %>%
+  summarise(any_true = any(val, na.rm = TRUE), .groups = "drop") %>%
+  transmute(record_id, name = paste0(grp, "_", opt, "_ever"), value = any_true) %>%
+  pivot_wider(names_from = name, values_from = value)
+
+# (4) per group across timepoints: any side-effect ever (exclude "none")
+
+sx_grp_any_ever_wide <- sx_long %>%
+  filter(opt != "none") %>%
+  group_by(record_id, grp) %>%
+  summarise(any_true = any(val, na.rm = TRUE), .groups = "drop") %>%
+  transmute(record_id, name = paste0(grp, "_any_ever"), value = any_true) %>%
+  pivot_wider(names_from = name, values_from = value)
+
+# (5) per timepoint (across *all* groups): any side-effect true at that tp (exclude "none")
+
+sx_tp_any_true_wide <- sx_long %>%
+  filter(opt != "none") %>%
+  group_by(record_id, tp) %>%
+  summarise(any_true = any(val, na.rm = TRUE), .groups = "drop") %>%
+  transmute(record_id, name = paste0(tp, "_any_true"), value = any_true) %>%
+  pivot_wider(names_from = name, values_from = value)
+
+# (6) overall ever: any side-effect TRUE at any timepoint & any group (exclude "none")
+
+sx_any_ever_wide <- sx_long %>%
+  filter(opt != "none") %>%
+  group_by(record_id) %>%
+  summarise(sx_any_ever = any(val, na.rm = TRUE), .groups = "drop")
+
+# Attach everything to treatment_data
+
+treatment_data <- treatment_data %>%
+  left_join(sx_tp_grp_any_true_wide, by = "record_id") %>%
+  left_join(sx_tp_grp_all_false_wide, by = "record_id") %>%
+  left_join(sx_ever_wide, by = "record_id") %>%
+  left_join(sx_grp_any_ever_wide, by = "record_id") %>%
+  left_join(sx_tp_any_true_wide, by = "record_id") %>%
+  left_join(sx_any_ever_wide, by = "record_id")
+
+
 # GIS data tidy ----------------------------------------------------------------------
 
 ## Join EA data to EA layer -------------------------------------------------------
