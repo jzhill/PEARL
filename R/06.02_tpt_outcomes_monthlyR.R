@@ -13,8 +13,18 @@ tpt_outcome_labels <- c(
   "Not yet assigned" = "Not yet assigned"
 )
 
+# ---- Exclusion window --------------------------------------------------------
+# Define the cutoff as "4 months ago" from today.
+cutoff_date <- Sys.Date() %m-% months(4)
+
+# Keep all rows EXCEPT those that:
+#   - started on/after cutoff_date (i.e., within last 4 months), AND
+tpt_filtered <- treatment_data %>%
+  filter(!is.na(tpt_start_date), tpt_start_date < cutoff_date)
+
+
 # Create a tibble with counts by month
-tpt_counts <- treatment_data %>%
+tpt_counts <- tpt_filtered %>%
   mutate(
     month = floor_date(tpt_start_date, "month"),  # Convert to month grouping
     tpt_outcome_reason = ifelse(is.na(tpt_outcome_reason), "Not yet assigned", as.character(tpt_outcome_reason))  # Handle NA values
