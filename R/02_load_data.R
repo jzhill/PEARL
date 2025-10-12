@@ -424,41 +424,43 @@ convert_field_types <- function(data, dd) {
     datetime = dd %>% filter(field_type == "text", text_validation_type_or_show_slider_number == "datetime_dmy") %>% pull(field_name),
     integer = dd %>% filter(field_type == "text", text_validation_type_or_show_slider_number == "integer") %>% pull(field_name),
     numeric = dd %>% filter((field_type == "text" & text_validation_type_or_show_slider_number == "number") | (field_type == "calc")) %>% pull(field_name),
-    factor  = dd %>% filter(field_type %in% c("radio", "dropdown", "yesno") | (field_type == "dropdown" & text_validation_type_or_show_slider_number == "autocomplete")) %>% pull(field_name),
+    factor  = dd %>% filter(field_type %in% c("radio", "dropdown") | (field_type == "dropdown" & text_validation_type_or_show_slider_number == "autocomplete")) %>% pull(field_name),
+    yesno    = dd %>% filter(field_type == "yesno") %>% pull(field_name),
     calctext = dd %>% filter(!is.na(field_annotation) & str_starts(field_annotation, "@CALCTEXT")) %>% pull(field_name)
   )
   field_groups$factor <- unique(c(field_groups$factor, field_groups$calctext))
-  converted <- unlist(field_groups[c("integer","numeric","date","datetime","factor")])
   
+  # All fields already assigned a target type
+  converted <- unlist(field_groups[c("integer","numeric","date","datetime","factor","yesno")])
+  
+  # Remaining text-ish fields (avoid re-casting already converted)
   field_groups$text <- dd %>%
     filter(field_type %in% c("text","notes","textarea","descriptive")) %>%
     pull(field_name) %>%
     setdiff(converted)
   
   data <- data %>%
-    mutate(across(any_of(field_groups$date),     ~ if (is.character(.)) lubridate::dmy(.) else .)) %>%
+    mutate(across(any_of(field_groups$date), ~ if (is.character(.)) lubridate::dmy(.) else .)) %>%
     mutate(across(any_of(field_groups$datetime), ~ if (is.character(.)) lubridate::parse_date_time(., orders = c("dmy HM","dmy HMS","ymd HM","ymd HMS")) else .)) %>%
-    mutate(across(any_of(field_groups$integer),  as.integer)) %>%
-    mutate(across(any_of(field_groups$numeric),  ~ if (is.numeric(.)) . else readr::parse_number(as.character(.)))) %>%
-    mutate(across(any_of(field_groups$factor),   as.factor)) %>%
-    mutate(across(any_of(field_groups$text),     as.character)) %>%
-    mutate(across(any_of("record_id"),          as.character))
+    mutate(across(any_of(field_groups$integer), as.integer)) %>%
+    mutate(across(any_of(field_groups$numeric), ~ if (is.numeric(.)) . else readr::parse_number(as.character(.)))) %>%
+    mutate(across(any_of(field_groups$factor), as.factor)) %>%
+    mutate(across(any_of(field_groups$yesno),
+      ~ {
+        # Keep existing logical as-is
+        if (is.logical(.)) return(.)
+        z <- as.character(.)
+        case_when(
+          tolower(str_trim(z)) %in% c("1","yes","true")  ~ TRUE,
+          tolower(str_trim(z)) %in% c("0","no","false") ~ FALSE,
+          is.na(z) ~ NA,
+          TRUE ~ NA
+        )
+      }
+    )) %>%
+    mutate(across(any_of(field_groups$text), as.character)) %>%
+    mutate(across(any_of("record_id"), as.character))
   
-  # Detect & convert residual yes/no to logical
-  yesno_cols <- names(data)[sapply(data, function(col) {
-    if (is.logical(col)) return(FALSE)
-    vals <- na.omit(unique(col))
-    vals_chr <- tolower(stringr::str_trim(as.character(vals)))
-    length(vals_chr) > 0 && all(vals_chr %in% c("yes","no"))
-  })]
-  if (length(yesno_cols)) {
-    data <- data %>%
-      mutate(across(all_of(yesno_cols), ~ dplyr::case_when(
-        tolower(as.character(.)) == "yes" ~ TRUE,
-        tolower(as.character(.)) == "no"  ~ FALSE,
-        TRUE ~ NA
-      )))
-  }
   data
 }
 
@@ -561,3 +563,18 @@ gis_paths <- here("data-raw/gis/KIR_EA_Census2020FINAL.geojson")
 gis_layers <- load_gis_if_present(gis_paths)
 layer_ki_ea       <- if (!is.null(gis_layers)) gis_layers$layer_4326 else NULL
 layer_ki_ea_3832  <- if (!is.null(gis_layers)) gis_layers$layer_3832 else NULL
+
+# ---- Return named list of data objects for later use ----------------------
+
+invisible(list(
+  screening_data = screening_data,
+  household_data = household_data,
+  treatment_data = treatment_data,
+  ea_data        = ea_data,
+  screening_dd   = screening_dd,
+  household_dd   = household_dd,
+  treatment_dd   = treatment_dd,
+  ea_dd          = ea_dd,
+  layer_ki_ea    = layer_ki_ea,
+  layer_ki_ea_3832 = layer_ki_ea_3832
+))
