@@ -174,12 +174,18 @@ load_dd <- function(filename) {
 }
 
 # report_dd_issues(): Emit counts of rows with missing field_name / field_label (for awareness)
+# - ignore descriptive fields
 # - none should be reported since all dd rows have field_name if intact
 
-report_dd_issues <- function(dd, dd_label) {
+report_dd_issues <- function(dd, dd_label, flag_descriptive = FALSE) {
   if (is.null(dd)) return(invisible())
-  bad_name <- dd %>% filter(is.na(field_name) | !nzchar(field_name))
-  bad_lab  <- dd %>% filter(is.na(field_label) | !nzchar(field_label))
+  bad_name <- dd %>% dplyr::filter(is.na(field_name) | !nzchar(field_name))
+  if (flag_descriptive) {
+    bad_lab <- dd %>% dplyr::filter(is.na(field_label) | !nzchar(field_label))
+  } else {
+    bad_lab <- dd %>% dplyr::filter(field_type != "descriptive",
+                                    is.na(field_label) | !nzchar(field_label))
+  }
   if (nrow(bad_name)) message(dd_label, ": ", nrow(bad_name), " rows missing/empty field_name (ignored).")
   if (nrow(bad_lab))  message(dd_label, ": ", nrow(bad_lab),  " rows missing/empty field_label (ignored).")
 }
@@ -217,7 +223,8 @@ option_key_from_label <- function(label, fallback_code) {
     stringr::str_replace_all("^_+|_+$", "")
 }
 
-# build_label_to_field_map(): Map normalised field_label -> field_name (non-checkbox base fields).
+# build_label_to_field_map(): Map normalised field_label -> field_name (non-checkbox base fields)
+# - creates a small df just of field names and normalised field labels for matching
 
 build_label_to_field_map <- function(dd) {
   if (is.null(dd)) return(character())
@@ -231,6 +238,8 @@ build_label_to_field_map <- function(dd) {
 
 # build_label_to_checkbox_map(): Map normalised checkbox label headers -> target names.
 # - target="slug": field_<slug> ; target="opt": field_opt#
+# - corresponds to the base field map, but adds another map for column names based on checkbox options
+
 build_label_to_checkbox_map <- function(dd, target = c("slug","opt")) {
   target <- match.arg(target)
   if (is.null(dd)) return(character())
@@ -269,7 +278,9 @@ build_label_to_checkbox_map <- function(dd, target = c("slug","opt")) {
 }
 
 # rename_from_labels(): Rename dataframe columns by matching normalised label text via DD.
-# - Checkbox map takes precedence over base map; never assigns NA/empty; keeps original if unknown.
+# - Checkbox map takes precedence over base map; never assigns NA/empty; keeps original if unknown
+# - uses the function above to create a merged rename map and rename columns in the data accordingly
+
 rename_from_labels <- function(df, dd, checkbox_target = c("slug","opt")) {
   if (is.null(df) || is.null(dd)) return(df)
   checkbox_target <- match.arg(checkbox_target)
@@ -294,6 +305,10 @@ rename_from_labels <- function(df, dd, checkbox_target = c("slug","opt")) {
 
 # build_cb_code_to_target_map(): Map code-style checkbox names (___/#/__/_opt#) -> final target.
 # - target="slug": field_<slug> ; target="opt": field_opt#
+# - we are initially coding checkbox options using an appended _opt# format
+# - also accounting for native redcap checkbox fieldname encoding ___X
+# - this function will rename options using the option "slug" if available in the dd
+
 build_cb_code_to_target_map <- function(dd, target = c("slug","opt")) {
   target <- match.arg(target)
   if (is.null(dd)) return(character())
@@ -324,7 +339,8 @@ build_cb_code_to_target_map <- function(dd, target = c("slug","opt")) {
 }
 
 # rename_cb_codes(): Apply the code-to-target map to a dataframe's column names.
-# - Harmonizes any leftover code-style checkbox columns to the chosen scheme.
+# - Harmonizes any leftover code-style checkbox columns to the chosen scheme
+
 rename_cb_codes <- function(df, dd, target = c("slug","opt")) {
   map <- build_cb_code_to_target_map(dd, target = match.arg(target))
   if (!length(map) || is.null(df)) return(df)
@@ -338,6 +354,7 @@ rename_cb_codes <- function(df, dd, target = c("slug","opt")) {
 ## ---- Light cleaning -----------------------------------------
 
 # clean_yesno_values(): Standardize free-text yes/no columns to "Yes"/"No" (strings).
+
 clean_yesno_values <- function(df) {
   if (is.null(df)) return(df)
   yesno_cols <- names(df)[sapply(df, function(col) {
@@ -356,6 +373,7 @@ clean_yesno_values <- function(df) {
 }
 
 # coerce_checkbox_logical(): Convert checkbox columns (field_<anything>) to logical TRUE/FALSE/NA.
+
 coerce_checkbox_logical <- function(data, dd) {
   if (is.null(data) || is.null(dd)) return(data)
   cb_fields <- dd %>% filter(field_type == "checkbox") %>% pull(field_name)
@@ -397,6 +415,7 @@ coerce_checkbox_logical <- function(data, dd) {
 
 # convert_field_types(): Convert columns to date/datetime/integer/numeric/factor/character using DD.
 # - Also converts any remaining yes/no string columns to logical TRUE/FALSE/NA.
+
 convert_field_types <- function(data, dd) {
   if (is.null(data) || is.null(dd)) return(data)
   
@@ -425,7 +444,7 @@ convert_field_types <- function(data, dd) {
     mutate(across(any_of(field_groups$text),     as.character)) %>%
     mutate(across(any_of("record_id"),          as.character))
   
-  # Optional: detect & convert residual yes/no to logical
+  # Detect & convert residual yes/no to logical
   yesno_cols <- names(data)[sapply(data, function(col) {
     if (is.logical(col)) return(FALSE)
     vals <- na.omit(unique(col))
@@ -447,6 +466,7 @@ convert_field_types <- function(data, dd) {
 
 # load_gis_if_present(): Load a GeoJSON (if present), return WGS84 layer and EPSG:3832 variant.
 # - Returns list(layer_4326=..., layer_3832=...) or NULL if missing/empty.
+
 load_gis_if_present <- function(path_geojson) {
   if (!file.exists(path_geojson)) {
     warning("GIS data file not found: ", path_geojson)
@@ -490,7 +510,7 @@ report_dd_issues(household_dd, "household_dd")
 report_dd_issues(treatment_dd, "treatment_dd")
 report_dd_issues(ea_dd,        "ea_dd")
 
-## ---- Optional diagnostics: unmapped label headers ------------
+## ---- Diagnostics: check for unmapped label headers ------------
 
 # check_unmapped(): Show which current headers don't match any known normalised DD labels.
 check_unmapped <- function(df, dd) {
@@ -535,7 +555,7 @@ household_data <- household_data %>% clean_yesno_values() %>% coerce_checkbox_lo
 treatment_data <- treatment_data %>% clean_yesno_values() %>% coerce_checkbox_logical(treatment_dd) %>% convert_field_types(treatment_dd)
 ea_data        <- ea_data        %>% clean_yesno_values() %>% coerce_checkbox_logical(ea_dd)        %>% convert_field_types(ea_dd)
 
-# ---- GIS (optional) ------------------------------------------
+# ---- GIS ------------------------------------------
 
 gis_paths <- here("data-raw/gis/KIR_EA_Census2020FINAL.geojson")
 gis_layers <- load_gis_if_present(gis_paths)
