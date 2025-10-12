@@ -1,15 +1,15 @@
 # 06.13_tpt_side_effects_age_sex.R
 # Age × Sex table for patients on TPT who experienced any side effect
-# Uses: treatment_data$age_cat (factor), treatment_data$tpt_sex, treatment_data$ae_any_true (logical)
+# Uses: treatment_data$age_cat (factor), treatment_data$tpt_sex, treatment_data$sx_any_ever (logical)
 
 library(tidyverse)
 library(flextable)
 library(here)
 
-# ---- Filter: ae_any_true == TRUE --------------------------------------------
+# ---- Filter: sx_any_ever == TRUE --------------------------------------------
 side_effect_data <- treatment_data %>%
   filter(
-    ae_any_true == TRUE,
+    sx_any_ever == TRUE,
     tpt_sex %in% c("M","F"),
     !is.na(age_cat)
   ) %>%
