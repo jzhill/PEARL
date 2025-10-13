@@ -422,6 +422,37 @@ village_order_cum <- c(setdiff(village_order_cum, "Other or unknown"), "Other or
 village_data_cum <- village_data_cum %>%
   mutate(village = factor(village, levels = village_order_cum))
 
+# ---- Treatment end date, duration, expected visits, forms done --------
+
+treatment_data <- treatment_data %>%
+  # ensure key date fields are Date (if they might be character, uncomment ymd())
+  # mutate(
+  #   across(c(tpt_start_date, tpt_outcome_date, tpt_1m_date, tpt_3m_date, tpt_4m_date), ymd)
+  # ) %>%
+  mutate(
+    # Candidate end dates: outcome date; OR the date of review that completed TPT
+    tpt_3m_complete_date = if_else(tpt_3m_outcome == "Complete TPT", tpt_3m_date, as.Date(NA)),
+    tpt_4m_complete_date = if_else(tpt_4m_outcome == "Complete TPT", tpt_4m_date, as.Date(NA)),
+    
+    # Cleaned end date = earliest of available candidates
+    tpt_end_date = pmin(tpt_outcome_date, tpt_3m_complete_date, tpt_4m_complete_date, na.rm = TRUE),
+    tpt_end_date = if_else(is.infinite(tpt_end_date), as.Date(NA), tpt_end_date),
+    
+    # Duration in days (integer); NA if start or end missing
+    tpt_dur = as.integer(difftime(tpt_end_date, tpt_start_date, units = "days")),
+    
+    # EXPECTED routine reviews based on duration achieved
+    # Assumption: thresholds reflect approx 1, 3, 4 months = 21, 77, 105 days respectively.
+    tpt_1m_expected = !is.na(tpt_dur) & tpt_dur >= 21,
+    tpt_3m_expected = !is.na(tpt_dur) & tpt_dur >= 77,
+    tpt_4m_expected = !is.na(tpt_dur) & tpt_dur >= 105,
+    
+    # DONE flags: consider the review done if the corresponding date is present
+    tpt_1m_done = !is.na(tpt_1m_date),
+    tpt_3m_done = !is.na(tpt_3m_date),
+    tpt_4m_done = !is.na(tpt_4m_date)
+  )
+
 # ---- Side-effect analysis columns ------------------------------
 
 timepoints <- c("1m", "3m", "4m", "ae")

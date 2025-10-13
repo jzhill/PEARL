@@ -11,6 +11,7 @@ library(here)
 
 # ---- Filter to starts ≥4 months ago -----------------------------------------
 cutoff_date <- Sys.Date() %m-% months(4)
+
 note_text <- paste0(
   "Note: Includes only patients who commenced TPT before ",
   format(cutoff_date, "%d %b %Y"),

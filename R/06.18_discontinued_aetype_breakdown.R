@@ -6,12 +6,14 @@ library(flextable)
 library(here)
 
 # --- Filter cohort: exactly "Discontinued" -----------------------------------
+
 df_disc <- treatment_data %>%
   filter(tpt_outcome_reason == "Discontinued")
 
 total_n <- nrow(df_disc)
 
 # --- Flags from explicit logical columns (NA -> FALSE) ------------------------
+
 flags <- df_disc %>%
   transmute(
     ses  = coalesce(tpt_ae_type_ses,      FALSE),
