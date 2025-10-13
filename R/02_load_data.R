@@ -52,7 +52,7 @@ load_latest_csv <- function(folder) {
   
   # Extract datetime from filenames (assumes YYYY-MM-DD_HHMM format)
   datetime_strings <- str_extract(basename(files), "[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{4}")
-  datetimes <- lubridate::ymd_hm(datetime_strings)
+  datetimes <- ymd_hm(datetime_strings)
   
   # Check for files which include valid datetimes
   valid <- which(!is.na(datetimes))
@@ -63,7 +63,7 @@ load_latest_csv <- function(folder) {
   
   # Identify and load the most recent file
   latest_file <- files[valid][which.max(datetimes[valid])]
-  df <- readr::read_csv(latest_file, show_col_types = FALSE)
+  df <- read_csv(latest_file, show_col_types = FALSE)
   
   message("Loaded data from: ", latest_file)
   df
@@ -166,7 +166,7 @@ load_dd <- function(filename) {
     warning("Data dictionary file not found: ", filename)
     return(NULL)
   }
-  dd <- readr::read_csv(filepath, show_col_types = FALSE) %>%
+  dd <- read_csv(filepath, show_col_types = FALSE) %>%
     rename_dd_if_needed() %>%
     mutate(field_label_norm = normalise_field_label(field_label))
   message("Loaded data dictionary: ", filename)
@@ -179,11 +179,11 @@ load_dd <- function(filename) {
 
 report_dd_issues <- function(dd, dd_label, flag_descriptive = FALSE) {
   if (is.null(dd)) return(invisible())
-  bad_name <- dd %>% dplyr::filter(is.na(field_name) | !nzchar(field_name))
+  bad_name <- dd %>% filter(is.na(field_name) | !nzchar(field_name))
   if (flag_descriptive) {
-    bad_lab <- dd %>% dplyr::filter(is.na(field_label) | !nzchar(field_label))
+    bad_lab <- dd %>% filter(is.na(field_label) | !nzchar(field_label))
   } else {
-    bad_lab <- dd %>% dplyr::filter(field_type != "descriptive",
+    bad_lab <- dd %>% filter(field_type != "descriptive",
                                     is.na(field_label) | !nzchar(field_label))
   }
   if (nrow(bad_name)) message(dd_label, ": ", nrow(bad_name), " rows missing/empty field_name (ignored).")
@@ -365,7 +365,7 @@ clean_yesno_values <- function(df) {
   })]
   if (!length(yesno_cols)) return(df)
   df %>%
-    mutate(across(all_of(yesno_cols), ~ dplyr::case_when(
+    mutate(across(all_of(yesno_cols), ~ case_when(
       tolower(str_trim(as.character(.))) == "yes" ~ "Yes",
       tolower(str_trim(as.character(.))) == "no"  ~ "No",
       TRUE ~ as.character(NA)
@@ -387,11 +387,11 @@ coerce_checkbox_logical <- function(data, dd) {
     mutate(across(all_of(cb_cols), ~ {
       if (is.logical(.)) return(.)
       x <- .
-      x <- dplyr::case_when(
+      x <- case_when(
         is.numeric(x) ~ x != 0,
         is.character(x) ~ {
           lx <- tolower(str_trim(x))
-          dplyr::case_when(
+          case_when(
             lx %in% c("1", "checked", "true", "yes") ~ TRUE,
             lx %in% c("0", "unchecked", "false", "no") ~ FALSE,
             TRUE ~ NA
@@ -399,7 +399,7 @@ coerce_checkbox_logical <- function(data, dd) {
         },
         is.factor(x) ~ {
           lx <- tolower(str_trim(as.character(x)))
-          dplyr::case_when(
+          case_when(
             lx %in% c("1", "checked", "true", "yes") ~ TRUE,
             lx %in% c("0", "unchecked", "false", "no") ~ FALSE,
             TRUE ~ NA
@@ -411,6 +411,46 @@ coerce_checkbox_logical <- function(data, dd) {
     }))
 }
 
+## ---- Type conversions (logical fields detection) ------------------
+
+# Map arbitrary labels/values to canonical "yes"/"no"/NA.
+# Handles: "Yes", "No", "Yes - all resolved", "No – ongoing" (en dash),
+#          y/n prefixes, 1/0, true/false, checked/unchecked.
+yn_token <- function(x) {
+  lx <- tolower(stringr::str_trim(as.character(x)))
+  # normalise all unicode dashes to a plain hyphen (just in case)
+  lx <- stringr::str_replace_all(lx, "[\u2010-\u2015]", "-")
+  case_when(
+    lx %in% c("1","true","t") ~ "yes",
+    lx %in% c("0","false","f") ~ "no",
+    stringr::str_detect(lx, "^\\s*yes\\b") ~ "yes",
+    stringr::str_detect(lx, "^\\s*y\\b")   ~ "yes",
+    stringr::str_detect(lx, "^\\s*checked\\b") ~ "yes",
+    stringr::str_detect(lx, "^\\s*no\\b")  ~ "no",
+    stringr::str_detect(lx, "^\\s*n\\b")   ~ "no",
+    stringr::str_detect(lx, "^\\s*unchecked\\b") ~ "no",
+    TRUE ~ NA_character_
+  )
+}
+
+# From the DD: which 'radio' (or dropdown) fields are actually binary Yes/No?
+binary_yesno_from_dd <- function(dd) {
+  if (is.null(dd)) return(character())
+  rows <- dd %>% filter(field_type %in% c("radio","dropdown"))
+  if (!nrow(rows)) return(character())
+  
+  out <- purrr::map_chr(seq_len(nrow(rows)), function(i) {
+    ch <- parse_cb_choices(rows$select_choices_or_calculations[i])
+    # keep only if exactly 2 choices and they normalise to one "yes" and one "no"
+    if (nrow(ch) == 2) {
+      toks <- unique(yn_token(ch$label))
+      if (length(toks) == 2 && all(sort(toks) == c("no","yes"))) return(rows$field_name[i])
+    }
+    NA_character_
+  })
+  stats::na.omit(out)
+}
+
 ## ---- Type conversions (dictionary-driven) --------------------
 
 # convert_field_types(): Convert columns to date/datetime/integer/numeric/factor/character using DD.
@@ -419,47 +459,85 @@ coerce_checkbox_logical <- function(data, dd) {
 convert_field_types <- function(data, dd) {
   if (is.null(data) || is.null(dd)) return(data)
   
+  # Identify groups from the DD 
+  
+  dd_yesno <- dd %>%
+    filter(field_type == "yesno") %>%
+    pull(field_name)
+  
+  dd_radio_yesno <- binary_yesno_from_dd(dd)
+  
   field_groups <- list(
     date = dd %>% filter(field_type == "text", text_validation_type_or_show_slider_number == "date_dmy") %>% pull(field_name),
     datetime = dd %>% filter(field_type == "text", text_validation_type_or_show_slider_number == "datetime_dmy") %>% pull(field_name),
-    integer = dd %>% filter(field_type == "text", text_validation_type_or_show_slider_number == "integer") %>% pull(field_name),
+    integer = dd %>% filter(field_type == "text",text_validation_type_or_show_slider_number == "integer") %>% pull(field_name),
     numeric = dd %>% filter((field_type == "text" & text_validation_type_or_show_slider_number == "number") | (field_type == "calc")) %>% pull(field_name),
-    factor  = dd %>% filter(field_type %in% c("radio", "dropdown") | (field_type == "dropdown" & text_validation_type_or_show_slider_number == "autocomplete")) %>% pull(field_name),
-    yesno    = dd %>% filter(field_type == "yesno") %>% pull(field_name),
-    calctext = dd %>% filter(!is.na(field_annotation) & str_starts(field_annotation, "@CALCTEXT")) %>% pull(field_name)
+    
+    # Exclude yes/no styles from factor bucket
+    factor  = dd %>% filter(field_type %in% c("radio","dropdown") & !(field_name %in% dd_radio_yesno)) %>% pull(field_name),
+    calctext = dd %>% filter(!is.na(field_annotation) & stringr::str_starts(field_annotation, "@CALCTEXT")) %>% pull(field_name)
   )
+  
   field_groups$factor <- unique(c(field_groups$factor, field_groups$calctext))
+  converted <- unlist(field_groups[c("integer","numeric","date","datetime","factor")])
   
-  # All fields already assigned a target type
-  converted <- unlist(field_groups[c("integer","numeric","date","datetime","factor","yesno")])
-  
-  # Remaining text-ish fields (avoid re-casting already converted)
   field_groups$text <- dd %>%
     filter(field_type %in% c("text","notes","textarea","descriptive")) %>%
     pull(field_name) %>%
     setdiff(converted)
   
+  # Convert YES/NO fields (DD-declared + binary radios) to logical
+  yn_fields <- unique(c(dd_yesno, dd_radio_yesno))
+  if (length(yn_fields)) {
+    data <- data %>%
+      mutate(across(any_of(yn_fields), ~{
+        x <- .
+        if (is.logical(x)) return(x)
+        if (is.numeric(x)) return(x != 0)
+        if (is.factor(x))  x <- as.character(x)
+        if (is.character(x)) {
+          tok <- yn_token(x)
+          return(case_when(
+            tok == "yes" ~ TRUE,
+            tok == "no"  ~ FALSE,
+            TRUE ~ NA
+          ))
+        }
+        as.logical(x)
+      }))
+  }
+  
+  # Do the rest of the DD-driven conversions
   data <- data %>%
-    mutate(across(any_of(field_groups$date), ~ if (is.character(.)) lubridate::dmy(.) else .)) %>%
-    mutate(across(any_of(field_groups$datetime), ~ if (is.character(.)) lubridate::parse_date_time(., orders = c("dmy HM","dmy HMS","ymd HM","ymd HMS")) else .)) %>%
-    mutate(across(any_of(field_groups$integer), as.integer)) %>%
-    mutate(across(any_of(field_groups$numeric), ~ if (is.numeric(.)) . else readr::parse_number(as.character(.)))) %>%
+    mutate(across(any_of(field_groups$date), ~ if (is.character(.)) dmy(.) else .)) %>%
+    mutate(across(any_of(field_groups$datetime), ~ if (is.character(.)) parse_date_time(., orders = c("dmy HM","dmy HMS","ymd HM","ymd HMS")) else .)) %>%
+    mutate(across(any_of(field_groups$integer),  as.integer)) %>%
+    mutate(across(any_of(field_groups$numeric), ~ if (is.numeric(.)) . else parse_number(as.character(.)))) %>%
     mutate(across(any_of(field_groups$factor), as.factor)) %>%
-    mutate(across(any_of(field_groups$yesno),
-      ~ {
-        # Keep existing logical as-is
-        if (is.logical(.)) return(.)
-        z <- as.character(.)
-        case_when(
-          tolower(str_trim(z)) %in% c("1","yes","true")  ~ TRUE,
-          tolower(str_trim(z)) %in% c("0","no","false") ~ FALSE,
-          is.na(z) ~ NA,
-          TRUE ~ NA
-        )
-      }
-    )) %>%
     mutate(across(any_of(field_groups$text), as.character)) %>%
     mutate(across(any_of("record_id"), as.character))
+  
+  # Any columns that look strictly like yes/no values -> logical
+  # This also picks up @CALCTEXT that only resolves Yes/No
+  
+  yesno_cols <- names(data)[sapply(data, function(col) {
+    if (is.logical(col)) return(FALSE)
+    vals <- unique(na.omit(col))
+    if (!length(vals) || length(vals) > 2) return(FALSE)
+    toks <- unique(yn_token(vals))
+    length(toks) == 2 && all(sort(toks) == c("no","yes"))
+  })]
+  if (length(yesno_cols)) {
+    data <- data %>%
+      mutate(across(all_of(yesno_cols), ~ {
+        tok <- yn_token(.)
+        case_when(
+          tok == "yes" ~ TRUE,
+          tok == "no"  ~ FALSE,
+          TRUE ~ NA
+        )
+      }))
+  }
   
   data
 }
