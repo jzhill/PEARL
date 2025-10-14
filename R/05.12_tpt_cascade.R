@@ -52,15 +52,16 @@ tpt_cascade$stage <- factor(
 # Reasons ineligible -----------------------------------
 
 tpt_ineligible <- screening_data %>%
-  filter(en_date_visit <= tpt_outcome_cutoff_date, prerx_eligible == "No") %>%
+  filter(en_date_visit <= tpt_outcome_cutoff_date, (prerx_eligible == "No" | ntp_diagnosis == "Confirmed")) %>%
   mutate(
     reason = case_when(
+      ntp_diagnosis == "Confirmed" ~ "Confirmed TB",
+      prerx_tbsx == TRUE | (tb_decision == "Presumptive TB" & ntp_diagnosis != "Ruled out") ~ "Presumed TB",
       prerx_tptchoice == FALSE ~ "Refused",
       exit_reason_screen == "TPT - withdraw consent and prefer not to continue" ~ "Refused",
       prerx_tb12m == TRUE ~ "Treated <12 months",
       prerx_allergy == TRUE ~ "Reported allergy",
       prerx_preg == TRUE ~ "Pregnant",
-      prerx_tbsx == TRUE | (tb_decision == "Presumptive TB" & ntp_diagnosis != "Ruled out") ~ "Presumed TB",
       prerx_riskcat == "High" ~ "High-risk DILI",
       TRUE ~ "Other/Unknown"
     )
