@@ -37,7 +37,7 @@ prop_long <- prop_by_age %>%
 # Set explicit color map
 color_map <- c("≥5mm" = "coral4", "≥10mm" = "turquoise4")
 
-ggplot(prop_long, aes(x = age_cat, y = proportion, group = threshold, color = threshold, shape = threshold)) +
+plot_05.17 <- ggplot(prop_long, aes(x = age_cat, y = proportion, group = threshold, color = threshold, shape = threshold)) +
   geom_line(size = 1) +
   geom_point(size = 3) +
   geom_hline(yintercept = overall$prop_5mm, linetype = "dashed", color = color_map["≥5mm"], size = 1) +
@@ -54,3 +54,11 @@ ggplot(prop_long, aes(x = age_cat, y = proportion, group = threshold, color = th
   theme_light() +
   theme(legend.position = "top")
 
+plot_05.17
+
+# Save plot image
+current_date <- format(Sys.Date(), "%Y-%m-%d")
+output_dir <- file.path(here("figures"), paste0("Outputs_", current_date))
+output_filename <- paste0("plot_05.17_", current_date, ".png")
+
+ggsave(filename = file.path(output_dir, output_filename), plot = plot_05.17, width = 8, height = 5, dpi = 300)
