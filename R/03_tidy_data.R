@@ -26,15 +26,36 @@ max_week <- floor_date(max(screening_data$en_date_visit, na.rm = TRUE), unit = "
 max_month <- floor_date(max(screening_data$en_date_visit, na.rm = TRUE), unit = "month")
 current_date <- format(Sys.Date(), "%Y-%m-%d")
 
-# Screening data checking and consolidating columns ----------------------
+# Helper binary columns creation ----------------------
 
-# Create helper binary column for TST read done, regardless of result
-screening_data <- screening_data %>%
-  mutate(tst_read_bin = ifelse(!is.na(tst_read_mm) | !is.na(tst_read_positive), TRUE, FALSE))
+xr_result_values   <- c("1 cw TB","2 CAD 50 plus","3 Uncertain","4 Unlikely","5 CAD under 50")
+nlp_outcome_values <- c("Confirmed","Ruled out","Already on MDT")
+ntp_outcome_values <- c("Confirmed","Ruled out","Currently on TB treatment")
 
-# Create helper binary column for TB outcome done, regardless of result
 screening_data <- screening_data %>%
-  mutate(tbdec_bin = ifelse(!is.na(tb_decision), TRUE, FALSE))
+  mutate(
+    # TST read done
+    tst_read_bin = !is.na(tst_read_mm) | !is.na(tst_read_positive),
+    
+    # TB decision recorded (any value present)
+    tbdec_bin = !is.na(tb_decision),
+    
+    # Leprosy “decision” recorded (here: referral field present)
+    lepdec_bin = !is.na(lep_refer),
+    
+    # XR result assigned (numbered options 1–5)
+    xr_resulted = calc_xr %in% xr_result_values,
+    
+    # Referrals (explicit logicals, never NA)
+    referred_ntp = coalesce(tb_decision == "Presumptive TB", FALSE),
+    referred_nlp = coalesce(lep_refer, FALSE),
+    
+    # Outcome recorded flags (only if referred)
+    nlp_outcome = referred_nlp &
+      (nlp_diagnosis %in% nlp_outcome_values | !is.na(exit_reason_screen)),
+    ntp_outcome = referred_ntp &
+      (ntp_diagnosis %in% ntp_outcome_values | !is.na(exit_reason_screen))
+  )
 
 # Age category in 10 year groups -------------------------------
 
@@ -57,11 +78,30 @@ treatment_data <- treatment_data %>%
   mutate(week_start = floor_date(tpt_start_date, unit = "week", week_start = 1)) %>%  
   mutate(week_start = if_else(week_start > max_week, NA_Date_, week_start)) %>% 
   mutate(week_outcome = floor_date(tpt_outcome_date, unit = "week", week_start = 1)) %>%  
-  mutate(week_outcome = if_else(week_start > max_week, NA_Date_, week_outcome))
+  mutate(week_outcome = if_else(week_outcome > max_week, NA_Date_, week_outcome))
 
 household_data <- household_data %>%
   mutate(week_enum = floor_date(hh_date, unit = "week", week_start = 1)) %>%  
   mutate(week_enum = if_else(week_enum > max_week, NA_Date_, week_enum))
+
+# Months for all dates ---------------------------------
+# Use this for all future monthly data analysis
+
+screening_data <- screening_data %>%
+  mutate(month_reg = floor_date(en_date_visit, unit = "month")) %>%
+  mutate(month_reg = if_else(month_reg > max_month, NA_Date_, month_reg))
+
+treatment_data <- treatment_data %>%
+  mutate(month_reg   = floor_date(tpt_reg_date,   unit = "month")) %>%
+  mutate(month_reg   = if_else(month_reg > max_month, NA_Date_, month_reg)) %>%
+  mutate(month_start = floor_date(tpt_start_date, unit = "month")) %>%
+  mutate(month_start = if_else(month_start > max_month, NA_Date_, month_start)) %>%
+  mutate(month_outcome = floor_date(tpt_outcome_date, unit = "month")) %>%
+  mutate(month_outcome = if_else(month_outcome > max_month, NA_Date_, month_outcome))
+
+household_data <- household_data %>%
+  mutate(month_enum = floor_date(hh_date, unit = "month")) %>%
+  mutate(month_enum = if_else(month_enum > max_month, NA_Date_, month_enum))
 
 # EA numbers removing any text -------------------------------
 # Use this for all future EA data analysis
@@ -201,114 +241,6 @@ ea_data <- ea_data %>%
     prop_reg_screen = round(ifelse(pop_elig_new == 0, NA, pop_reg_screen_new / pop_elig_new), 2) %>% replace_na(NA_real_),
   )
 
-# Weekly Aggregation ------------------------------------------------------
-
-## Aggregate ---------------------------------
-
-# Aggregate all required counts at the weekly level
-weekly_data <- screening_data %>%
-  filter(week_reg <= max_week) %>%  # drop future weeks which are errors
-  group_by(week_reg) %>%
-  summarise(
-    reg = n(),
-    tst_placed = sum(as.integer(tst_success == "Yes"), na.rm = TRUE),
-    tst_read = sum(as.integer(tst_read_bin), na.rm = TRUE),
-    cxr_elig = sum(as.integer(calc_xr_elig), na.rm = TRUE),
-    cxr_done = sum(as.integer(cxr_done == "Yes"), na.rm = TRUE),
-    tbdec = sum(as.integer(tbdec_bin), na.rm = TRUE),
-    anyrx = sum(!is.na(calc_any_treatment), na.rm = TRUE),
-    xpert = sum(as.integer(spuxpt_labreq_lab), na.rm = TRUE),
-    tst_place_pct = if_else(sum(reg, na.rm = TRUE) > 0, sum(tst_placed, na.rm = TRUE) / sum(reg, na.rm = TRUE) * 100, NA_real_),
-    tst_read_pct = if_else(sum(tst_placed, na.rm = TRUE) > 0, sum(tst_read, na.rm = TRUE) / sum(tst_placed, na.rm = TRUE) * 100, NA_real_),
-    tbdec_pct = if_else(sum(reg, na.rm = TRUE) > 0, sum(tbdec, na.rm = TRUE) / sum(reg, na.rm = TRUE) * 100, NA_real_),
-    anyrx_pct = if_else(sum(reg, na.rm = TRUE) > 0, sum(anyrx, na.rm = TRUE) / sum(reg, na.rm = TRUE) * 100, NA_real_),
-    xpert_pct = if_else(sum(reg, na.rm = TRUE) > 0, sum(xpert, na.rm = TRUE) / sum(reg, na.rm = TRUE) * 100, NA_real_),
-    cxr_pct = if_else(sum(cxr_elig, na.rm = TRUE) > 0, sum(cxr_done, na.rm = TRUE) / sum(cxr_elig, na.rm = TRUE) * 100, NA_real_),
-    .groups = "drop"
-  ) %>%
-  complete(
-    week_reg = seq.Date(from = min_week, to = max_week, by = "week")  # Ensure all weeks exist
-  )
-
-# Aggregate Household Data using week_enum
-household_weekly <- household_data %>%
-  drop_na(week_enum) %>%
-  count(week_enum, name = "hh_enum") %>%
-  rename(week_reg = week_enum)
-
-# Aggregate Treatment Data using week_start
-treatment_weekly <- treatment_data %>%
-  drop_na(week_start) %>%
-  count(week_start, name = "tpt_start") %>%
-  rename(week_reg = week_start)  # Rename for consistency
-
-# Aggregate Presumptive TB counts by week_reg, ensuring factor labels are retained
-tb_decision_counts <- screening_data %>%
-  mutate(
-    tb_decision = fct_explicit_na(factor(tb_decision), na_level = "Missing")
-  ) %>%
-  count(week_reg, tb_decision) %>%
-  pivot_wider(names_from = tb_decision, values_from = n, values_fill = list(n = 0)) %>%
-  rename(
-    tbdec_prestb = `Presumptive TB`,
-    tbdec_ro = `Ruled out TB`,
-    tbdec_unc = `TB status uncertain`,
-    tbdec_missing = `Missing`
-  ) 
-
-# Aggregate TST Read Positive counts by week_reg, ensuring factor labels are retained
-tst_result_counts <- screening_data %>%
-  mutate(
-    tst_read_positive = fct_explicit_na(factor(tst_read_positive), na_level = "Missing")
-  ) %>%
-  count(week_reg, tst_read_positive) %>%
-  pivot_wider(names_from = tst_read_positive, values_from = n, values_fill = list(n = 0)) %>%
-  rename(
-    tst_neg = `Negative TST`,
-    tst_pos = `Positive TST`,
-    tst_missing = `Missing`
-  ) 
-
-## Join and complete ---------------------------
-
-weekly_data <- weekly_data %>%
-  left_join(household_weekly, by = "week_reg") %>%
-  left_join(treatment_weekly, by = "week_reg") %>%
-  left_join(tb_decision_counts, by = "week_reg") %>%
-  left_join(tst_result_counts, by = "week_reg") %>%
-  mutate(week_reg = as.Date(week_reg))%>%
-  mutate(across(
-    c(reg, tst_placed, tst_read, cxr_elig, cxr_done, tbdec, anyrx, xpert, hh_enum, tpt_start),
-    ~ replace_na(., 0)
-  ))
-
-## Additional processing ------------------------
-
-# Replace with NA for plotting
-weekly_data_na <- weekly_data %>%
-  mutate(across(where(is.numeric), ~ ifelse(. == 0, NA, .))) %>%
-  mutate(week_reg = as.Date(week_reg))
-
-# Prepare data for plotting
-weekly_long <- weekly_data %>%
-  select(
-    week_reg, 
-    reg, 
-    tpt_start, 
-    tst_place_pct, 
-    tst_read_pct, 
-    tbdec_pct, 
-    anyrx_pct, 
-    xpert_pct, 
-    cxr_pct, 
-    starts_with("tbdec_"), 
-    starts_with("tst_")
-  ) %>% 
-  pivot_longer(
-    cols = -week_reg,
-    names_to = "Indicator",
-    values_to = "Value"
-  )
 
 # Village level aggregation ----------------------------
 
@@ -603,29 +535,24 @@ household_data <- household_data %>%
   left_join(
     hh_gps_sf %>%
       st_drop_geometry() %>%
-      select(record_id, gps_valid),
+      transmute(record_id, gps_valid = as.logical(gps_valid)),
     by = "record_id"
-  ) 
-
-# Create clean lat/long columns using conditional coalescing and record source
-household_data <- household_data %>%
+  ) %>%
   mutate(
-    hh_latitude = as.numeric(hh_latitude),
-    hh_longitude = as.numeric(hh_longitude),
-    hh_census_lat = as.numeric(hh_census_lat),
+    # ensure gps_valid exists even if hh_gps_sf had 0 rows
+    gps_valid = coalesce(gps_valid, FALSE),
+    # coerce possible character exports to numeric
+    hh_latitude    = as.numeric(hh_latitude),
+    hh_longitude   = as.numeric(hh_longitude),
+    hh_census_lat  = as.numeric(hh_census_lat),
     hh_census_long = as.numeric(hh_census_long),
-    lat = coalesce(
-      hh_census_lat,
-      ifelse(gps_valid, hh_latitude, NA)
-    ),
-    long = coalesce(
-      hh_census_long,
-      ifelse(gps_valid, hh_longitude, NA)
-    ),
+    # prefer census coords; otherwise use gps only if valid
+    lat  = coalesce(hh_census_lat,  if_else(gps_valid, hh_latitude,  NA_real_)),
+    long = coalesce(hh_census_long, if_else(gps_valid, hh_longitude, NA_real_)),
     coord_source = case_when(
       !is.na(hh_census_lat) & !is.na(hh_census_long) ~ "census",
-      gps_valid ~ "gps",
-      TRUE ~ "none"
+      gps_valid                                       ~ "gps",
+      TRUE                                            ~ "none"
     )
   )
 
@@ -644,47 +571,193 @@ screening_data <- screening_data %>%
     by = c("dwelling_id" = "record_id")
   )
 
-# Metrics for tables -------------------------------------------------------------------------
 
-## Headline numbers for current week and total --------------------------------------------------
+# --- Unifying metrics builder for tables and time aggregation --------------
 
-# Function to compute weekly and total metrics
-compute_metrics <- function(data, week_col = NULL, filter_expr = NULL, distinct_col = NULL) {
+build_time_agg <- function(screening_data, household_data, treatment_data,
+                           freq = c("week","month"), week_start = 1,
+                           min_date = NULL, max_date = NULL) {
+  freq <- match.arg(freq)
   
-  # Apply weekly filter if week_col is provided
-  if (!is.null(week_col)) {
-    data_week <- data %>% filter(.data[[week_col]] == max_week)
+  # key columns by frequency
+  key_col <- if (freq == "week") "week_reg"     else "month_reg"
+  key_hh  <- if (freq == "week") "week_enum"    else "month_enum"
+  key_ts  <- if (freq == "week") "week_start"   else "month_start"
+  key_to  <- if (freq == "week") "week_outcome" else "month_outcome"
+  
+  # bounds
+  min_key <- if (freq == "week") min(screening_data$week_reg,  na.rm = TRUE) else min(screening_data$month_reg,  na.rm = TRUE)
+  max_key <- if (freq == "week") max(screening_data$week_reg,  na.rm = TRUE) else max(screening_data$month_reg,  na.rm = TRUE)
+  min_key <- if (is.null(min_date)) min_key else as.Date(min_date)
+  max_key <- if (is.null(max_date)) max_key else as.Date(max_date)
+  
+  # full sequence
+  full_seq <- if (freq == "week") {
+    seq.Date(from = lubridate::floor_date(min_key, "week", week_start = week_start),
+             to   = lubridate::floor_date(max_key, "week", week_start = week_start),
+             by   = "week")
   } else {
-    data_week <- data
+    seq.Date(from = lubridate::floor_date(min_key, "month"),
+             to   = lubridate::floor_date(max_key, "month"),
+             by   = "month")
   }
   
-  # Apply distinct filtering if distinct_col is provided
-  if (!is.null(distinct_col)) {
-    week_count <- data_week %>% distinct(.data[[distinct_col]]) %>% nrow()
-    total_count <- data %>% distinct(.data[[distinct_col]]) %>% nrow()
-  } else if (!is.null(filter_expr)) {  # Apply additional filter condition
-    week_count <- data_week %>% filter(eval(filter_expr, data_week)) %>% nrow()
-    total_count <- data %>% filter(eval(filter_expr, data)) %>% nrow()
-  } else {  # If no filter condition, just count rows
-    week_count <- nrow(data_week)
-    total_count <- nrow(data)
-  }
+  # Check fields are logical, should be from loading and tidying already
+  stopifnot(
+    all(vapply(
+      screening_data[c("tst_read_bin","calc_xr_elig","tbdec_bin","spuxpt_labreq_lab",
+                       "lep_refer","lepdec_bin","xr_resulted","referred_ntp",
+                       "referred_nlp","nlp_outcome","ntp_outcome")],
+      is.logical, logical(1)
+    ))
+  )
   
-  return(list(week = week_count, total = total_count))
+  ## Enumeration (households) -------------------------
+  
+  hh_counts <- household_data %>%
+    drop_na(all_of(key_hh)) %>%
+    count(.data[[key_hh]], name = "hh_enum") %>%
+    transmute(period_start = .data[[key_hh]], hh_enum = hh_enum) %>%
+    complete(period_start = full_seq, fill = list(hh_enum = 0))
+  
+  ## Screening (activity & pathway) ---------------------------------
+  
+  # One grouped summarise over screening_data: all core counts, percentages,
+  # households reached, referrals, follow-up outcomes, XR resulted.
+  scr_core <- screening_data %>%
+    filter(.data[[key_col]] <= max_key) %>%
+    group_by(period_start = .data[[key_col]]) %>%
+    summarise(
+      # activity
+      reg        = n(),
+      tst_placed = sum(tst_success == "Yes", na.rm = TRUE),
+      tst_read   = sum(tst_read_bin,       na.rm = TRUE),
+      cxr_elig   = sum(calc_xr_elig,       na.rm = TRUE),
+      cxr_done   = sum(cxr_done   == "Yes", na.rm = TRUE),
+      cxr_result = sum(xr_resulted,        na.rm = TRUE),
+      tbdec      = sum(tbdec_bin,          na.rm = TRUE),
+      anyrx      = sum(!is.na(calc_any_treatment), na.rm = TRUE),
+      xpert      = sum(spuxpt_labreq_lab,  na.rm = TRUE),
+      
+      # households reached (distinct dwellings registered in the period)
+      households_reached = n_distinct(dwelling_name),
+      
+      # referrals (use prepared flags)
+      ref_ntp    = sum(referred_ntp, na.rm = TRUE),
+      ref_nlp    = sum(referred_nlp, na.rm = TRUE),
+      ref_hbv    = sum(prerx_hbv_1 == "Positive", na.rm = TRUE),
+      
+      # follow-up outcomes recorded (use prepared flags)
+      nlp_outcome_recorded = sum(nlp_outcome, na.rm = TRUE),
+      ntp_outcome_recorded = sum(ntp_outcome, na.rm = TRUE),
+      
+      # percentages
+      tst_place_pct = if_else(sum(reg)        > 0, tst_placed / reg        * 100, NA_real_),
+      tst_read_pct  = if_else(sum(tst_placed) > 0, tst_read   / tst_placed * 100, NA_real_),
+      tbdec_pct     = if_else(sum(reg)        > 0, tbdec      / reg        * 100, NA_real_),
+      anyrx_pct     = if_else(sum(reg)        > 0, anyrx      / reg        * 100, NA_real_),
+      xpert_pct     = if_else(sum(reg)        > 0, xpert      / reg        * 100, NA_real_),
+      cxr_pct       = if_else(sum(cxr_elig)   > 0, cxr_done   / cxr_elig   * 100, NA_real_),
+      
+      .groups = "drop"
+    ) %>%
+    complete(period_start = full_seq)
+  
+  ## Screening results (distributions) -------------------------------
+  
+  tb_dist <- screening_data %>%
+    mutate(tb_decision = fct_explicit_na(factor(tb_decision), na_level = "Missing")) %>%
+    count(.data[[key_col]], tb_decision, name = "n") %>%
+    mutate(period_start = .data[[key_col]]) %>%
+    select(-all_of(key_col)) %>%
+    pivot_wider(names_from = tb_decision, values_from = n, values_fill = 0) %>%
+    rename(tbdec_prestb = `Presumptive TB`,
+           tbdec_ro     = `Ruled out TB`,
+           tbdec_unc    = `TB status uncertain`,
+           tbdec_missing= `Missing`) %>%
+    complete(period_start = full_seq,
+             fill = list(tbdec_prestb = 0, tbdec_ro = 0, tbdec_unc = 0, tbdec_missing = 0))
+  
+  tst_dist <- screening_data %>%
+    mutate(tst_read_positive = fct_explicit_na(factor(tst_read_positive), na_level = "Missing")) %>%
+    count(.data[[key_col]], tst_read_positive, name = "n") %>%
+    mutate(period_start = .data[[key_col]]) %>%
+    select(-all_of(key_col)) %>%
+    pivot_wider(names_from = tst_read_positive, values_from = n, values_fill = 0) %>%
+    rename(tst_neg = `Negative TST`,
+           tst_pos = `Positive TST`,
+           tst_missing = `Missing`) %>%
+    complete(period_start = full_seq,
+             fill = list(tst_neg = 0, tst_pos = 0, tst_missing = 0))
+  
+  ## Treatment (starts & completions) ----------------
+  
+  tpt_start_counts <- treatment_data %>%
+    drop_na(all_of(key_ts)) %>%
+    count(.data[[key_ts]], name = "tpt_start") %>%
+    transmute(period_start = .data[[key_ts]], tpt_start = tpt_start) %>%
+    complete(period_start = full_seq, fill = list(tpt_start = 0))
+  
+  tpt_completed <- treatment_data %>%
+    filter(!is.na(.data[[key_to]])) %>%
+    filter(tpt_outcome_reason == "Completed") %>%
+    count(.data[[key_to]], name = "tpt_completed") %>%
+    transmute(period_start = .data[[key_to]], tpt_completed = tpt_completed) %>%
+    complete(period_start = full_seq, fill = list(tpt_completed = 0))
+  
+  ## Assemble & variants ----------------------------
+  
+  out <- scr_core %>%
+    left_join(hh_counts,        by = "period_start") %>%
+    left_join(tpt_start_counts, by = "period_start") %>%
+    left_join(tb_dist,          by = "period_start") %>%
+    left_join(tst_dist,         by = "period_start") %>%
+    left_join(tpt_completed,    by = "period_start") %>%
+    mutate(period_start = as.Date(period_start)) %>%
+    mutate(across(
+      c(reg, tst_placed, tst_read, cxr_elig, cxr_done, cxr_result, tbdec, anyrx, xpert,
+        households_reached, ref_ntp, ref_nlp, ref_hbv,
+        nlp_outcome_recorded, ntp_outcome_recorded,
+        hh_enum, tpt_start, tpt_completed,
+        tbdec_prestb, tbdec_ro, tbdec_unc, tbdec_missing,
+        tst_neg, tst_pos, tst_missing),
+      ~ replace_na(., 0)
+    ))
+  
+  out_na <- out %>%
+    mutate(across(where(is.numeric), ~ ifelse(. == 0, NA, .)))
+  
+  out_long <- out %>%
+    select(
+      period_start,
+      # phases: activity & treatment alongside %
+      reg, households_reached,
+      tpt_start, tpt_completed,
+      tst_place_pct, tst_read_pct, tbdec_pct, anyrx_pct, xpert_pct, cxr_pct,
+      # counts & distributions
+      tst_placed, tst_read, cxr_elig, cxr_done, cxr_result,
+      tbdec, anyrx, xpert,
+      tbdec_prestb, tbdec_ro, tbdec_unc, tbdec_missing,
+      tst_neg, tst_pos, tst_missing,
+      # referrals & follow-up
+      ref_ntp, ref_nlp, ref_hbv,
+      nlp_outcome_recorded, ntp_outcome_recorded,
+      # households
+      hh_enum
+    ) %>%
+    pivot_longer(-period_start, names_to = "Indicator", values_to = "Value")
+  
+  list(data = out, data_na = out_na, data_long = out_long)
 }
 
-# Compute indicators for current week and total
-indicators <- list(
-  "Households Enumerated" = compute_metrics(household_data, week_col = "week_enum"),
-  "Households Reached" = compute_metrics(screening_data, week_col = "week_reg", distinct_col = "dwelling_name"),
-  "People Registered" = compute_metrics(screening_data, week_col = "week_reg"),
-  "TSTs Completed" = compute_metrics(screening_data, week_col = "week_reg", filter_expr = expression(tst_read_bin == TRUE)),
-  "Referred to NTP" = compute_metrics(screening_data, week_col = "week_reg", filter_expr = expression(tb_decision == "Presumptive TB")),
-  "Referred to NLP" = compute_metrics(screening_data, week_col = "week_reg", filter_expr = expression(lep_refer == TRUE)),
-  "Referred to Hep B" = compute_metrics(screening_data, week_col = "week_reg", filter_expr = expression(prerx_hbv_1 == "Positive")),
-  "X-Rays Performed" = compute_metrics(screening_data, week_col = "week_reg", filter_expr = expression(cxr_done == "Yes")),
-  "Xpert Tests Done" = compute_metrics(screening_data, week_col = "week_reg", filter_expr = expression(spuxpt_labreq_lab == TRUE)),
-  "Started on TPT" = compute_metrics(treatment_data, week_col = "week_start"),
-  "Completed TPT" = compute_metrics(treatment_data, week_col = "week_outcome", filter_expr = expression(tpt_outcome_reason == "Completed"))
-)
+# --- Build both series -----------------------------------------------------
 
+weekly <- build_time_agg(screening_data, household_data, treatment_data, freq = "week",  week_start = 1)
+weekly_data <- weekly$data
+weekly_data_na <- weekly$data_na
+weekly_long <- weekly$data_long
+
+monthly <- build_time_agg(screening_data, household_data, treatment_data, freq = "month")
+monthly_data <- monthly$data
+monthly_data_na <- monthly$data_na
+monthly_long <- monthly$data_long

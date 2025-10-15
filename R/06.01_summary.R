@@ -4,52 +4,85 @@ library(flextable)
 library(here)
 library(officer)
 
-# Create summary table
+# Current (latest) week in the unified series
+max_week <- max(weekly_data$period_start, na.rm = TRUE)
+wd <- weekly_data %>% filter(period_start == max_week)
+
+# Build "This Week" values from the latest weekly row
+this_week <- list(
+  "Households Enumerated" = wd$hh_enum,
+  "Households Reached"    = wd$households_reached,
+  "People Registered"     = wd$reg,
+  "TSTs Completed"        = wd$tst_read,
+  "Referred to NTP"       = wd$ref_ntp,
+  "Referred to NLP"       = wd$ref_nlp,
+  "Referred to Hep B"     = wd$ref_hbv,
+  "X-Rays Performed"      = wd$cxr_done,
+  "X-Rays Resulted"       = wd$cxr_result,
+  "Xpert Tests Done"      = wd$xpert,
+  "NLP Outcome Recorded"  = wd$nlp_outcome_recorded,
+  "NTP Outcome Recorded"  = wd$ntp_outcome_recorded,
+  "Started on TPT"        = wd$tpt_start,
+  "Completed TPT"         = wd$tpt_completed
+)
+
+# Build "Total Count" values from the raw datasets (preserving old semantics)
+total_counts <- list(
+  "Households Enumerated" = nrow(household_data),
+  "Households Reached"    = screening_data %>% distinct(dwelling_name) %>% nrow(),
+  "People Registered"     = nrow(screening_data),
+  "TSTs Completed"        = sum(screening_data$tst_read_bin, na.rm = TRUE),
+  "Referred to NTP"       = sum(screening_data$referred_ntp, na.rm = TRUE),
+  "Referred to NLP"       = sum(screening_data$referred_nlp, na.rm = TRUE),
+  "Referred to Hep B"     = sum(screening_data$prerx_hbv_1 == "Positive", na.rm = TRUE),
+  "X-Rays Performed"      = sum(screening_data$cxr_done == "Yes", na.rm = TRUE),
+  "X-Rays Resulted"       = sum(screening_data$xr_resulted, na.rm = TRUE),
+  "Xpert Tests Done"      = sum(screening_data$spuxpt_labreq_lab, na.rm = TRUE),
+  "NLP Outcome Recorded"  = sum(screening_data$nlp_outcome, na.rm = TRUE),
+  "NTP Outcome Recorded"  = sum(screening_data$ntp_outcome, na.rm = TRUE),
+  "Started on TPT"        = sum(!is.na(treatment_data$tpt_start_date)),
+  "Completed TPT"         = sum(treatment_data$tpt_outcome_reason == "Completed", na.rm = TRUE)
+)
+
+# Create the summary table frame
 summary_table <- tibble(
-  Indicator = names(indicators),
-  This_Week = sapply(indicators, function(x) x$week),
-  Total_Count = sapply(indicators, function(x) x$total)
+  Indicator   = names(this_week),
+  This_Week   = unlist(this_week, use.names = FALSE),
+  Total_Count = unlist(total_counts[names(this_week)], use.names = FALSE)
 )
 
 # Format and enhance flextable
 table_06.01 <- summary_table %>%
   flextable() %>%
-  
-  # Header rows
   set_header_labels(Indicator = "Indicator", This_Week = "This Week", Total_Count = "Total Count") %>%
   add_header_row(
     values = paste("Summary of PEARL activity for week starting", format(max_week, "%Y-%m-%d")),
-    colwidths = 3  # Title spans all three columns
+    colwidths = 3
   ) %>%
-  
-  # Styling Enhancements
   theme_vanilla() %>%
-  bg(part = "header", bg = "#F2F2F2") %>%  # Light grey header background
-  bg(part = "body", bg = "white") %>%
-  bold(part = "header") %>%               # Bold header text
-  bold(part = "body", j = "Indicator") %>% # Bold first column (Indicator)
-  font(part = "header", fontname = "Arial") %>% 
-  font(part = "body", fontname = "Arial") %>%
-  fontsize(size = 12, part = "header") %>%  # Slightly larger header font
-  fontsize(size = 10, part = "body") %>%    # Standard body font
-  line_spacing(space = 1.3, part = "header") %>%  # Ensures enough space for title text
-  align(j = c("This_Week", "Total_Count"), align = "center", part = "all") %>%  # Center align numbers
-  
-  # Border Fixes
+  bg(part = "header", bg = "#F2F2F2") %>%
+  bg(part = "body", bg = "white") %>%  # ensure white for dark-mode readability
+  bold(part = "header") %>%
+  bold(part = "body", j = "Indicator") %>%
+  font(part = "header", fontname = "Arial") %>%
+  font(part = "body",   fontname = "Arial") %>%
+  fontsize(size = 12, part = "header") %>%
+  fontsize(size = 10, part = "body") %>%
+  line_spacing(space = 1.3, part = "header") %>%
+  align(j = c("This_Week", "Total_Count"), align = "center", part = "all") %>%
   border(part = "all", border = fp_border(color = "black", width = 0.5)) %>%
-  border_inner(border = fp_border(color = "black", width = 0.5)) %>%  # Inner cell borders
-  border_outer(border = fp_border(color = "black", width = 1.2)) %>%  # Outer table border
-  
-  # Adjust column widths
-  width(j = "Indicator", width = 3.5) %>%  
-  width(j = c("This_Week", "Total_Count"), width = 1.5) %>%
+  border_inner(border = fp_border(color = "black", width = 0.5)) %>%
+  border_outer(border = fp_border(color = "black", width = 1.2)) %>%
+  width(j = "Indicator", width = 3.8) %>%
+  width(j = c("This_Week", "Total_Count"), width = 1.6) %>%
   autofit()
 
 table_06.01
 
-# Save flextable
-current_date <- format(Sys.Date(), "%Y-%m-%d")
-output_dir <- file.path(here("figures"), paste0("Outputs_", current_date))
-output_filename <- paste0("table_06.01_", current_date, ".png")
+# Save flextable image
+current_date   <- format(Sys.Date(), "%Y-%m-%d")
+output_dir     <- file.path(here("figures"), paste0("Outputs_", current_date))
+output_filename<- paste0("table_06.01_", current_date, ".png")
+dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 
 save_as_image(table_06.01, path = file.path(output_dir, output_filename))
