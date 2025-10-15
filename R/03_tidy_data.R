@@ -60,10 +60,10 @@ screening_data <- screening_data %>%
 # Age category in 10 year groups -------------------------------
 
 screening_data <- screening_data %>%
-  mutate(age_cat = epikit::age_categories(en_cal_age, by = 10, upper = 80))
+  mutate(age_cat = age_categories(en_cal_age, by = 10, upper = 80))
 
 treatment_data <- treatment_data %>%
-  mutate(age_cat = epikit::age_categories(tpt_age, by = 10, upper = 80))
+  mutate(age_cat = age_categories(tpt_age, by = 10, upper = 80))
 
 # Weeks for all dates ---------------------------------
 # Use this for all future weekly data analysis
@@ -593,12 +593,12 @@ build_time_agg <- function(screening_data, household_data, treatment_data,
   
   # full sequence
   full_seq <- if (freq == "week") {
-    seq.Date(from = lubridate::floor_date(min_key, "week", week_start = week_start),
-             to   = lubridate::floor_date(max_key, "week", week_start = week_start),
+    seq.Date(from = floor_date(min_key, "week", week_start = week_start),
+             to   = floor_date(max_key, "week", week_start = week_start),
              by   = "week")
   } else {
-    seq.Date(from = lubridate::floor_date(min_key, "month"),
-             to   = lubridate::floor_date(max_key, "month"),
+    seq.Date(from = floor_date(min_key, "month"),
+             to   = floor_date(max_key, "month"),
              by   = "month")
   }
   
@@ -690,6 +690,54 @@ build_time_agg <- function(screening_data, household_data, treatment_data,
     complete(period_start = full_seq,
              fill = list(tst_neg = 0, tst_pos = 0, tst_missing = 0))
   
+  ## Treatment assessment pathway ----------------
+  
+  tpt_ax <- screening_data %>%
+    filter(.data[[key_col]] <= max_key) %>%
+    group_by(period_start = .data[[key_col]]) %>%
+    summarise(
+      
+      # Who should be assessed for TPT?
+      tpt_should_assess = sum(
+        (tst_read_positive == "Positive TST") &
+          (tb_decision == "Ruled out TB" | ntp_diagnosis == "Ruled out"),
+        na.rm = TRUE
+      ),
+      
+      # Who completed TPT assessment?
+      tpt_assessment_done = sum(
+        (prerx_eligible %in% c("Yes","No")) |
+          (exit_reason_screen == "TPT - withdraw consent and prefer not to continue"),
+        na.rm = TRUE
+      ),
+      
+      # Helper denominators
+      tpt_eligible_n = sum(prerx_eligible == "Yes", na.rm = TRUE),
+      tpt_started_n  = sum(prerx_start == TRUE,     na.rm = TRUE),
+      
+      # NEW percentages
+      tpt_assessed_of_should_pct = if_else(
+        tpt_should_assess > 0,
+        100 * tpt_assessment_done / tpt_should_assess,
+        NA_real_
+      ),
+      
+      tpt_started_of_eligible_pct = if_else(
+        tpt_eligible_n > 0,
+        100 * sum(prerx_start == TRUE, na.rm = TRUE) / tpt_eligible_n,
+        NA_real_
+      ),
+      
+      tpt_eligible_of_started_pct = if_else(
+        tpt_started_n > 0,
+        100 * sum(prerx_eligible == "Yes" & prerx_start == TRUE, na.rm = TRUE) / tpt_started_n,
+        NA_real_
+      ),
+      
+      .groups = "drop"
+    ) %>%
+    complete(period_start = full_seq)
+  
   ## Treatment (starts & completions) ----------------
   
   tpt_start_counts <- treatment_data %>%
@@ -710,6 +758,7 @@ build_time_agg <- function(screening_data, household_data, treatment_data,
   out <- scr_core %>%
     left_join(hh_counts,        by = "period_start") %>%
     left_join(tpt_start_counts, by = "period_start") %>%
+    left_join(tpt_ax,           by = "period_start") %>%
     left_join(tb_dist,          by = "period_start") %>%
     left_join(tst_dist,         by = "period_start") %>%
     left_join(tpt_completed,    by = "period_start") %>%
@@ -720,7 +769,7 @@ build_time_agg <- function(screening_data, household_data, treatment_data,
         nlp_outcome_recorded, ntp_outcome_recorded,
         hh_enum, tpt_start, tpt_completed,
         tbdec_prestb, tbdec_ro, tbdec_unc, tbdec_missing,
-        tst_neg, tst_pos, tst_missing),
+        tst_neg, tst_pos, tst_missing, tpt_should_assess, tpt_assessment_done),
       ~ replace_na(., 0)
     ))
   
@@ -734,6 +783,9 @@ build_time_agg <- function(screening_data, household_data, treatment_data,
       reg, households_reached,
       tpt_start, tpt_completed,
       tst_place_pct, tst_read_pct, tbdec_pct, anyrx_pct, xpert_pct, cxr_pct,
+      # TPT pathway indicators
+      tpt_should_assess, tpt_assessment_done,
+      tpt_assessed_of_should_pct, tpt_started_of_eligible_pct, tpt_eligible_of_started_pct,
       # counts & distributions
       tst_placed, tst_read, cxr_elig, cxr_done, cxr_result,
       tbdec, anyrx, xpert,
