@@ -508,47 +508,51 @@ layer_betio_ea_3832 <- layer_ki_ea_3832 %>%
 office_point <- st_sfc(
   st_point(c(172.943185325, 1.352152047)),
   crs = 4326
-) %>%
-  st_transform(crs = 3832)
+) %>% st_transform(crs = 3832)
 
 # Create spatial object of GPS coordinates only
 hh_gps_sf <- household_data %>%
   mutate(
-    gps_lat = as.numeric(hh_latitude),
+    gps_lat  = as.numeric(hh_latitude),
     gps_long = as.numeric(hh_longitude)
   ) %>%
-  filter(!is.na(gps_lat) & !is.na(gps_long)) %>%
+  filter(!is.na(gps_lat), !is.na(gps_long)) %>%
   st_as_sf(coords = c("gps_long", "gps_lat"), crs = 4326) %>%
-  st_transform(crs = 3832) 
+  st_transform(crs = 3832)
 
 # Flag whether the GPS record is valid or not
 hh_gps_sf <- hh_gps_sf %>%
   mutate(
     dist_to_office = as.numeric(st_distance(geometry, office_point)),
-    near_office = dist_to_office < 200,
-    inside_ea = lengths(st_within(geometry, layer_betio_ea_3832)) > 0,
-    gps_valid = !near_office & inside_ea
+    near_office    = dist_to_office < 200,
+    inside_ea      = lengths(st_within(geometry, layer_betio_ea_3832)) > 0,
+    gps_valid      = !near_office & inside_ea
   )
 
-# Join back to household_data using record_id
+# Prepare a plain data frame of the flags
+gps_flags_df <- hh_gps_sf %>%
+  st_drop_geometry() %>%
+  transmute(record_id, gps_valid = as.logical(gps_valid))
+
+# Join back to household_data using record_id (IDEMPOTENT)
 household_data <- household_data %>%
-  left_join(
-    hh_gps_sf %>%
-      st_drop_geometry() %>%
-      transmute(record_id, gps_valid = as.logical(gps_valid)),
-    by = "record_id"
-  ) %>%
+  # drop previously-derived cols to avoid .x/.y suffixing on re-runs
+  select(-any_of(c("gps_valid", "lat", "long", "coord_source"))) %>%
+  left_join(gps_flags_df, by = "record_id") %>%
   mutate(
     # ensure gps_valid exists even if hh_gps_sf had 0 rows
     gps_valid = coalesce(gps_valid, FALSE),
+    
     # coerce possible character exports to numeric
     hh_latitude    = as.numeric(hh_latitude),
     hh_longitude   = as.numeric(hh_longitude),
     hh_census_lat  = as.numeric(hh_census_lat),
     hh_census_long = as.numeric(hh_census_long),
+    
     # prefer census coords; otherwise use gps only if valid
     lat  = coalesce(hh_census_lat,  if_else(gps_valid, hh_latitude,  NA_real_)),
     long = coalesce(hh_census_long, if_else(gps_valid, hh_longitude, NA_real_)),
+    
     coord_source = case_when(
       !is.na(hh_census_lat) & !is.na(hh_census_long) ~ "census",
       gps_valid                                       ~ "gps",
