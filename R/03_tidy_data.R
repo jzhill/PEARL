@@ -639,25 +639,30 @@ build_time_agg <- function(screening_data, household_data, treatment_data,
       anyrx      = sum(!is.na(calc_any_treatment), na.rm = TRUE),
       xpert      = sum(spuxpt_labreq_lab,  na.rm = TRUE),
       
-      # households reached (distinct dwellings registered in the period)
+      # households reached
       households_reached = n_distinct(dwelling_name),
       
-      # referrals (use prepared flags)
+      # referrals
       ref_ntp    = sum(referred_ntp, na.rm = TRUE),
       ref_nlp    = sum(referred_nlp, na.rm = TRUE),
       ref_hbv    = sum(prerx_hbv_1 == "Positive", na.rm = TRUE),
       
-      # follow-up outcomes recorded (use prepared flags)
+      # follow-up outcomes
       nlp_outcome_recorded = sum(nlp_outcome, na.rm = TRUE),
       ntp_outcome_recorded = sum(ntp_outcome, na.rm = TRUE),
       
-      # percentages
-      tst_place_pct = if_else(sum(reg)        > 0, tst_placed / reg        * 100, NA_real_),
-      tst_read_pct  = if_else(sum(tst_placed) > 0, tst_read   / tst_placed * 100, NA_real_),
-      tbdec_pct     = if_else(sum(reg)        > 0, tbdec      / reg        * 100, NA_real_),
-      anyrx_pct     = if_else(sum(reg)        > 0, anyrx      / reg        * 100, NA_real_),
-      xpert_pct     = if_else(sum(reg)        > 0, xpert      / reg        * 100, NA_real_),
-      cxr_pct       = if_else(sum(cxr_elig)   > 0, cxr_done   / cxr_elig   * 100, NA_real_),
+      # percentages (use the scalars defined above)
+      tst_place_pct = if_else(reg        > 0, tst_placed / reg        * 100, NA_real_),
+      tst_read_pct  = if_else(tst_placed > 0, tst_read   / tst_placed * 100, NA_real_),
+      tbdec_pct     = if_else(reg        > 0, tbdec      / reg        * 100, NA_real_),
+      anyrx_pct     = if_else(reg        > 0, anyrx      / reg        * 100, NA_real_),
+      xpert_pct     = if_else(reg        > 0, xpert      / reg        * 100, NA_real_),
+      cxr_pct       = if_else(cxr_elig   > 0, cxr_done   / cxr_elig   * 100, NA_real_),
+      
+      # new percentages
+      cxr_res_pct   = if_else(cxr_done   > 0, cxr_result / cxr_done   * 100, NA_real_),
+      ntp_out_pct   = if_else(ref_ntp    > 0, ntp_outcome_recorded / ref_ntp * 100, NA_real_),
+      nlp_out_pct   = if_else(ref_nlp    > 0, nlp_outcome_recorded / ref_nlp * 100, NA_real_),
       
       .groups = "drop"
     ) %>%
@@ -715,7 +720,7 @@ build_time_agg <- function(screening_data, household_data, treatment_data,
       tpt_eligible_n = sum(prerx_eligible == "Yes", na.rm = TRUE),
       tpt_started_n  = sum(prerx_start == TRUE,     na.rm = TRUE),
       
-      # NEW percentages
+      # Percentages
       tpt_assessed_of_should_pct = if_else(
         tpt_should_assess > 0,
         100 * tpt_assessment_done / tpt_should_assess,
@@ -740,34 +745,36 @@ build_time_agg <- function(screening_data, household_data, treatment_data,
   
   ## Treatment (starts & completions) ----------------
   
-  tpt_start_counts <- treatment_data %>%
-    drop_na(all_of(key_ts)) %>%
-    count(.data[[key_ts]], name = "tpt_start") %>%
-    transmute(period_start = .data[[key_ts]], tpt_start = tpt_start) %>%
-    complete(period_start = full_seq, fill = list(tpt_start = 0))
-  
-  tpt_completed <- treatment_data %>%
-    filter(!is.na(.data[[key_to]])) %>%
-    filter(tpt_outcome_reason == "Completed") %>%
-    count(.data[[key_to]], name = "tpt_completed") %>%
-    transmute(period_start = .data[[key_to]], tpt_completed = tpt_completed) %>%
-    complete(period_start = full_seq, fill = list(tpt_completed = 0))
+  tpt_rx <- treatment_data %>%
+    mutate(period_start = .data[[key_ts]]) %>%
+    drop_na(period_start) %>%
+    group_by(period_start) %>%
+    summarise(
+      tpt_start               = n(),
+      tpt_outcome_assigned    = sum(!is.na(tpt_outcome_reason), na.rm = TRUE),
+      tpt_completed           = sum(tpt_outcome_reason == "Completed", na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    right_join(tibble(period_start = full_seq), by = "period_start") %>%
+    mutate(
+      across(c(tpt_start, tpt_outcome_assigned, tpt_completed), ~ replace_na(., 0)),
+      tpt_outcome_assigned_pct = if_else(tpt_start > 0, 100 * tpt_outcome_assigned / tpt_start, NA_real_)
+    )
   
   ## Assemble & variants ----------------------------
   
   out <- scr_core %>%
-    left_join(hh_counts,        by = "period_start") %>%
-    left_join(tpt_start_counts, by = "period_start") %>%
-    left_join(tpt_ax,           by = "period_start") %>%
-    left_join(tb_dist,          by = "period_start") %>%
-    left_join(tst_dist,         by = "period_start") %>%
-    left_join(tpt_completed,    by = "period_start") %>%
+    left_join(hh_counts, by = "period_start") %>%
+    left_join(tpt_ax, by = "period_start") %>%
+    left_join(tb_dist, by = "period_start") %>%
+    left_join(tst_dist, by = "period_start") %>%
+    left_join(tpt_rx, by = "period_start") %>%
     mutate(period_start = as.Date(period_start)) %>%
     mutate(across(
       c(reg, tst_placed, tst_read, cxr_elig, cxr_done, cxr_result, tbdec, anyrx, xpert,
         households_reached, ref_ntp, ref_nlp, ref_hbv,
         nlp_outcome_recorded, ntp_outcome_recorded,
-        hh_enum, tpt_start, tpt_completed,
+        hh_enum, tpt_start, tpt_completed, tpt_outcome_assigned,
         tbdec_prestb, tbdec_ro, tbdec_unc, tbdec_missing,
         tst_neg, tst_pos, tst_missing, tpt_should_assess, tpt_assessment_done),
       ~ replace_na(., 0)
@@ -781,8 +788,9 @@ build_time_agg <- function(screening_data, household_data, treatment_data,
       period_start,
       # phases: activity & treatment alongside %
       reg, households_reached,
-      tpt_start, tpt_completed,
+      tpt_start, tpt_completed, tpt_outcome_assigned,
       tst_place_pct, tst_read_pct, tbdec_pct, anyrx_pct, xpert_pct, cxr_pct,
+      cxr_res_pct, ntp_out_pct, nlp_out_pct, 
       # TPT pathway indicators
       tpt_should_assess, tpt_assessment_done,
       tpt_assessed_of_should_pct, tpt_started_of_eligible_pct, tpt_eligible_of_started_pct,
