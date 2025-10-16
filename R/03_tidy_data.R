@@ -354,36 +354,93 @@ village_order_cum <- c(setdiff(village_order_cum, "Other or unknown"), "Other or
 village_data_cum <- village_data_cum %>%
   mutate(village = factor(village, levels = village_order_cum))
 
+# ---- TPT risk assessment flags (aligned with calc_tptrfs) --------------------
+# Expected levels of screening_data$calc_tptrfs:
+# "01 ALT done - HIGH RISK"
+# "02 ALT done - MODERATE HIGH RISK"
+# "03 ALT done - MODERATE RISK"
+# "04 ALT not needed, no RFs - low risk"
+# "05 RFs present, baseline ALT needed - cannot assess TPT risk until done"
+# "06 RFs not complete"
+
+# canonical labels we’ll use for comparison
+risk_levels <- c("High","Moderate high","Moderate","Low")
+
+screening_data <- screening_data %>%
+  mutate(
+    calc_tptrfs_chr = str_squish(as.character(calc_tptrfs)),
+    prerx_riskcat_chr = str_squish(as.character(prerx_riskcat)),
+    
+    # A) risk factors assessed: anything except explicit "not complete"
+    tptrf_assessed = !is.na(calc_tptrfs_chr) & calc_tptrfs_chr != "06 RFs not complete",
+    
+    # B) baseline ALT needed: codes 01/02/03/05 from calc_tptrfs
+    tptrf_alt_needed = str_detect(calc_tptrfs_chr, "^(01|02|03|05)\\b"),
+    
+    # C) baseline ALT requested: blood collected?
+    tptrf_alt_requested = coalesce(as.logical(prerx_lft_1), FALSE),
+    
+    # D) baseline ALT result reported: have a value for most recent ALT
+    tptrf_alt_result = !is.na(suppressWarnings(as.numeric(calc_alt_last))),
+    
+    # Expected risk level from calc_tptrfs code (01–04 only)
+    tptrf_expected_level = case_when(
+      str_detect(calc_tptrfs_chr, "^01\\b") ~ "High",
+      str_detect(calc_tptrfs_chr, "^02\\b") ~ "Moderate high",
+      str_detect(calc_tptrfs_chr, "^03\\b") ~ "Moderate",
+      str_detect(calc_tptrfs_chr, "^04\\b") ~ "Low",
+      TRUE ~ NA_character_
+    ),
+    
+    # E) risk group assigned? (= present and not "Not yet known")
+    tptrf_risk_assigned = !is.na(prerx_riskcat_chr) & prerx_riskcat_chr != "Not yet known",
+    
+    # Normalize assigned level to the same canonical set; NA if "Not yet known"
+    tptrf_assigned_level = case_when(
+      prerx_riskcat_chr %in% risk_levels ~ prerx_riskcat_chr,
+      TRUE ~ NA_character_
+    ),
+    
+    # F) assigned level equals expected level (only compare when both present)
+    tptrf_risk_as_expected = !is.na(tptrf_expected_level) &
+      !is.na(tptrf_assigned_level) &
+      tptrf_expected_level == tptrf_assigned_level
+  )
+
 # ---- Treatment end date, duration, expected visits, forms done --------
 
 treatment_data <- treatment_data %>%
-  # ensure key date fields are Date (if they might be character, uncomment ymd())
-  # mutate(
-  #   across(c(tpt_start_date, tpt_outcome_date, tpt_1m_date, tpt_3m_date, tpt_4m_date), ymd)
-  # ) %>%
   mutate(
-    # Candidate end dates: outcome date; OR the date of review that completed TPT
+    # Dates that can constitute a REAL end (i.e., course actually ended)
     tpt_3m_complete_date = if_else(tpt_3m_outcome == "Complete TPT", tpt_3m_date, as.Date(NA)),
     tpt_4m_complete_date = if_else(tpt_4m_outcome == "Complete TPT", tpt_4m_date, as.Date(NA)),
     
-    # Cleaned end date = earliest of available candidates
-    tpt_end_date = pmin(tpt_outcome_date, tpt_3m_complete_date, tpt_4m_complete_date, na.rm = TRUE),
-    tpt_end_date = if_else(is.infinite(tpt_end_date), as.Date(NA), tpt_end_date),
+    # --- REAL end date: earliest of outcome/complete dates; NA if none exist
+    .tpt_end_real_num = do.call(pmin, c(
+      list(tpt_outcome_date, tpt_3m_complete_date, tpt_4m_complete_date),
+      list(na.rm = TRUE)
+    )),
+    tpt_end_date_real = as.Date(ifelse(is.infinite(.tpt_end_real_num), NA, .tpt_end_real_num), origin = "1970-01-01"),
     
-    # Duration in days (integer); NA if start or end missing
-    tpt_dur = as.integer(difftime(tpt_end_date, tpt_start_date, units = "days")),
+    # --- PROVISIONAL end date: real end if known, else today()
+    tpt_end_date_prov = coalesce(tpt_end_date_real, lubridate::today()),
     
-    # EXPECTED routine reviews based on duration achieved
-    # Assumption: thresholds reflect approx 1, 3, 4 months = 21, 77, 105 days respectively.
-    tpt_1m_expected = !is.na(tpt_dur) & tpt_dur >= 21,
-    tpt_3m_expected = !is.na(tpt_dur) & tpt_dur >= 77,
-    tpt_4m_expected = !is.na(tpt_dur) & tpt_dur >= 105,
+    # Durations
+    tpt_dur_real = as.integer(difftime(tpt_end_date_real, tpt_start_date, units = "days")),  # NA if still active
+    tpt_dur_prov = as.integer(difftime(tpt_end_date_prov, tpt_start_date, units = "days")),
     
-    # DONE flags: consider the review done if the corresponding date is present
+    # EXPECTED reviews are based on PROVISIONAL duration (i.e., progress to date)
+    # thresholds ≈ 1, 3, 4 months
+    tpt_1m_expected = !is.na(tpt_dur_prov) & tpt_dur_prov >= 21,
+    tpt_3m_expected = !is.na(tpt_dur_prov) & tpt_dur_prov >= 77,
+    tpt_4m_expected = !is.na(tpt_dur_prov) & tpt_dur_prov >= 105,
+    
+    # DONE flags (as recorded)
     tpt_1m_done = !is.na(tpt_1m_date),
     tpt_3m_done = !is.na(tpt_3m_date),
     tpt_4m_done = !is.na(tpt_4m_date)
-  )
+  ) %>%
+  select(-.tpt_end_real_num)
 
 # ---- Side-effect analysis columns ------------------------------
 
@@ -743,26 +800,60 @@ build_time_agg <- function(screening_data, household_data, treatment_data,
         NA_real_
       ),
       
+      # TPT risk assessment step 
+      tptrf_assessed_n       = sum(tptrf_assessed,        na.rm = TRUE),
+      tptrf_alt_needed_n     = sum(tptrf_alt_needed,      na.rm = TRUE),
+      tptrf_alt_requested_n  = sum(tptrf_alt_requested,   na.rm = TRUE),
+      tptrf_alt_result_n     = sum(tptrf_alt_result,      na.rm = TRUE),
+      tptrf_risk_assigned_n  = sum(tptrf_risk_assigned,   na.rm = TRUE),
+      tptrf_as_expected_n    = sum(tptrf_risk_as_expected,na.rm = TRUE),
+      
       .groups = "drop"
     ) %>%
     complete(period_start = full_seq)
   
-  ## Treatment (starts & completions) ----------------
+  ## Treatment (starts, reviews & completions) ----------------
   
   tpt_rx <- treatment_data %>%
-    mutate(period_start = .data[[key_ts]]) %>%
-    drop_na(period_start) %>%
-    group_by(period_start) %>%
+    # key every record to its start period (week_start / month_start)
+    drop_na(all_of(key_ts)) %>%
+    group_by(period_start = .data[[key_ts]]) %>%
     summarise(
+      # cohort size (starts in this period)
       tpt_start               = n(),
+      # outcomes tied to this start cohort (regardless of outcome date)
       tpt_outcome_assigned    = sum(!is.na(tpt_outcome_reason), na.rm = TRUE),
       tpt_completed           = sum(tpt_outcome_reason == "Completed", na.rm = TRUE),
+      
+      # review expectations & completions
+      tpt_1m_expected         = sum(tpt_1m_expected, na.rm = TRUE),
+      tpt_1m_done             = sum(tpt_1m_done,     na.rm = TRUE),
+      tpt_3m_expected         = sum(tpt_3m_expected, na.rm = TRUE),
+      tpt_3m_done             = sum(tpt_3m_done,     na.rm = TRUE),
+      tpt_4m_expected         = sum(tpt_4m_expected, na.rm = TRUE),
+      tpt_4m_done             = sum(tpt_4m_done,     na.rm = TRUE),
       .groups = "drop"
     ) %>%
-    right_join(tibble(period_start = full_seq), by = "period_start") %>%
+    complete(
+      period_start = full_seq,
+      fill = list(
+        tpt_start = 0,
+        tpt_outcome_assigned = 0,
+        tpt_completed = 0,
+        tpt_1m_expected = 0, tpt_1m_done = 0,
+        tpt_3m_expected = 0, tpt_3m_done = 0,
+        tpt_4m_expected = 0, tpt_4m_done = 0
+      )
+    ) %>%
     mutate(
-      across(c(tpt_start, tpt_outcome_assigned, tpt_completed), ~ replace_na(., 0)),
-      tpt_outcome_assigned_pct = if_else(tpt_start > 0, 100 * tpt_outcome_assigned / tpt_start, NA_real_)
+      # treatment support / follow-up quality
+      tpt_outcome_assigned_pct = if_else(tpt_start > 0, 100 * tpt_outcome_assigned / tpt_start, NA_real_),
+      tpt_completed_pct = if_else(tpt_start > 0, 100 * tpt_completed / tpt_start, NA_real_),
+      
+      # review completion percentages (done / expected)
+      tpt_1m_done_pct = if_else(tpt_1m_expected > 0, 100 * tpt_1m_done / tpt_1m_expected, NA_real_),
+      tpt_3m_done_pct = if_else(tpt_3m_expected > 0, 100 * tpt_3m_done / tpt_3m_expected, NA_real_),
+      tpt_4m_done_pct = if_else(tpt_4m_expected > 0, 100 * tpt_4m_done / tpt_4m_expected, NA_real_)
     )
   
   ## Assemble & variants ----------------------------
@@ -779,8 +870,12 @@ build_time_agg <- function(screening_data, household_data, treatment_data,
         households_reached, ref_ntp, ref_nlp, ref_hbv,
         nlp_outcome_recorded, ntp_outcome_recorded,
         hh_enum, tpt_start, tpt_completed, tpt_outcome_assigned,
+        tpt_1m_expected, tpt_1m_done, tpt_3m_expected, tpt_3m_done, tpt_4m_expected, tpt_4m_done,
         tbdec_prestb, tbdec_ro, tbdec_unc, tbdec_missing,
-        tst_neg, tst_pos, tst_missing, tpt_should_assess, tpt_assessment_done),
+        tst_neg, tst_pos, tst_missing, tpt_should_assess, tpt_assessment_done,
+        tptrf_assessed_n, tptrf_alt_needed_n, tptrf_alt_requested_n,
+        tptrf_alt_result_n, tptrf_risk_assigned_n, tptrf_as_expected_n
+      ),
       ~ replace_na(., 0)
     ))
   
@@ -798,6 +893,15 @@ build_time_agg <- function(screening_data, household_data, treatment_data,
       # TPT pathway indicators
       tpt_should_assess, tpt_assessment_done,
       tpt_assessed_of_should_pct, tpt_started_of_eligible_pct, tpt_eligible_of_started_pct,
+      # TPT risk indicators
+      tptrf_assessed_n, tptrf_alt_needed_n, tptrf_alt_requested_n,
+      tptrf_alt_result_n, tptrf_risk_assigned_n, tptrf_as_expected_n,
+      # review counts & percentages
+      tpt_1m_expected, tpt_1m_done, tpt_1m_done_pct,
+      tpt_3m_expected, tpt_3m_done, tpt_3m_done_pct,
+      tpt_4m_expected, tpt_4m_done, tpt_4m_done_pct,
+      # treatment support percent
+      tpt_outcome_assigned_pct, tpt_completed_pct,
       # counts & distributions
       tst_placed, tst_read, cxr_elig, cxr_done, cxr_result,
       tbdec, anyrx, xpert,
