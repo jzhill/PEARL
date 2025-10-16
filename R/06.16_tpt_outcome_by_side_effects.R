@@ -9,14 +9,17 @@ library(flextable)
 library(officer)
 library(here)
 
-# ---- Filter to starts ≥4 months ago -----------------------------------------
+# ---- Filter & notes ----------------------------------------------------------
 cutoff_date <- Sys.Date() %m-% months(4)
 
 note_text <- paste0(
   "Note: Includes only patients who commenced TPT before ",
   format(cutoff_date, "%d %b %Y"),
-  " (≥ 4 months before table run date)."
+  " (≥ 4 months before table run date). Generated ",
+  format(Sys.Date(), "%Y-%m-%d")
 )
+
+title_text <- "TPT outcomes among those reporting symptoms"
 
 df <- treatment_data %>%
   filter(!is.na(tpt_start_date), tpt_start_date < cutoff_date)
@@ -122,8 +125,11 @@ table_06.16 <- tbl_final %>%
   )) %>%
   theme_vanilla() %>%
   bg(part = "all", bg = "white") %>%
-  add_header_row(values = c("","Reported side effects","No side effects","All"),
-                 colwidth = c(1, 2, 2, 2)) %>%
+  # grouped header first...
+  add_header_row(values = c("", "Reported side effects", "No side effects", "All"),
+                 colwidths = c(1, 2, 2, 2)) %>%
+  # ...then add the title line so it sits at the very top
+  add_header_lines(values = title_text) %>%
   set_header_labels(
     `TPT outcome`              = "TPT outcome",
     `Reported side effects_n`  = "n",
@@ -148,6 +154,7 @@ table_06.16 <- tbl_final %>%
   italic(part = "footer") %>%
   hline_top(part = "footer", border = officer::fp_border(color = "grey70")) %>%
   autofit()
+
 
 table_06.16
 

@@ -61,8 +61,16 @@ row_counts <- tibble(
          `%` = if_else(Type == "Total" & total_n > 0, 100, `%`))
 
 # --- Flextable ---------------------------------------------------------------
+title_text <- paste0("Discontinued TPT - adverse events profile")
+
+note_text <- paste0(
+  "Note: Generated ",
+  format(Sys.Date(), "%Y-%m-%d")
+)
+
 table_06.18 <- row_counts %>%
   flextable() %>%
+  add_header_lines(values = title_text) %>%
   theme_vanilla() %>%
   bg(part = "all", bg = "white") %>%
   bold(part = "header") %>%
@@ -70,6 +78,10 @@ table_06.18 <- row_counts %>%
   align(j = c("n", "%"), align = "center", part = "all") %>%
   colformat_int(j = "n", big.mark = ",") %>%
   colformat_num(j = "%", digits = 1, suffix = "%") %>%
+  add_footer_lines(values = note_text) %>%
+  bg(part = "footer", bg = "white") %>%
+  italic(part = "footer") %>%
+  hline_top(part = "footer", border = officer::fp_border(color = "grey70")) %>%
   autofit()
 
 table_06.18

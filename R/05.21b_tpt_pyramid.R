@@ -1,4 +1,4 @@
-# 05.02_tpt_age_pyramid.R
+# 05.21b_tpt_age_pyramid.R
 # Population pyramid for people in treatment_data only
 
 library(tidyverse)
@@ -6,13 +6,13 @@ library(here)
 library(apyramid)
 
 # ---- Data -------------------------------------------------------
-plot_05.17_data <- treatment_data %>%
+plot_05.21b_data <- treatment_data %>%
   filter(tpt_sex %in% c("M","F"), !is.na(age_cat)) %>%
   mutate(tpt_sex = factor(tpt_sex, levels = c("M","F")))
 
 # ---- Plot -------------------------------------------------------
-plot_05.17 <- age_pyramid(
-  plot_05.17_data,
+plot_05.21b <- age_pyramid(
+  plot_05.21b_data,
   age_group = "age_cat",
   split_by  = "tpt_sex"
 ) +
@@ -26,7 +26,7 @@ plot_05.17 <- age_pyramid(
   theme_light() +
   theme(legend.title = element_blank())
 
-plot_05.17
+plot_05.21b
 
 # ---- Save -------------------------------------------------------
 current_date <- format(Sys.Date(), "%Y-%m-%d")
@@ -34,6 +34,6 @@ output_dir <- file.path(here("figures"), paste0("Outputs_", current_date))
 if (!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
 
 ggsave(
-  filename = file.path(output_dir, paste0("plot_05.17_", current_date, ".png")),
-  plot = plot_05.17, width = 8, height = 5, dpi = 300
+  filename = file.path(output_dir, paste0("plot_05.21b_", current_date, ".png")),
+  plot = plot_05.21b, width = 8, height = 5, dpi = 300
 )

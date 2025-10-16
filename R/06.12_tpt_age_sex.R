@@ -33,9 +33,14 @@ total_row <- summarise(table_06.12_data,
 table_06.12_data <- bind_rows(table_06.12_data, total_row)
 
 # ---- Flextable --------------------------------------------------
+title_text <- paste0(
+  "TPT patients by age and sex — generated ", format(Sys.Date(), "%Y-%m-%d")
+)
+
 table_06.12 <- table_06.12_data %>%
   rename(`Age group` = age_cat) %>%
   flextable(col_keys = c("Age group","M","F","Total")) %>%
+  add_header_lines(values = title_text) %>%
   theme_vanilla() %>%
   bg(bg = "white", part = "all") %>%          # ensure white background for dark-mode viewers
   bold(part = "header", bold = TRUE) %>%

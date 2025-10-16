@@ -27,13 +27,14 @@ indicator_labels <- c(
   "tst_read_pct"= "TST Read",
   "tst_place_pct"="TST Placed",
   "cxr_pct"     = "XR Done if Eligible",
+  "cxr_res_pct" = "XR Result Available",
   "xpert_pct"   = "Xpert Test Done",
   "reg"         = "People Registered",
   "tpt_start"   = "Started Treatment"
 )
 
 weekly_long_p1 <- weekly_long %>% 
-  filter(Indicator %in% c("anyrx_pct","tbdec_pct","tst_read_pct","tst_place_pct","cxr_pct","xpert_pct")) %>% 
+  filter(Indicator %in% c("anyrx_pct","tbdec_pct","tst_read_pct","tst_place_pct","cxr_pct","cxr_res_pct","xpert_pct")) %>% 
   mutate(Indicator = recode(Indicator, !!!indicator_labels))
 
 weekly_long_p2 <- weekly_long %>%

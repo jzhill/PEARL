@@ -41,9 +41,14 @@ total_row <- summarise(tbl_counts,
 tbl_counts <- bind_rows(tbl_counts, total_row)
 
 # ---- Flextable --------------------------------------------------------------
+title_text <- paste0(
+  "Patients reporting symptoms during TPT by age and sex — generated ", format(Sys.Date(), "%Y-%m-%d")
+)
+
 table_06.13 <- tbl_counts %>%
   rename(`Age group` = age_cat) %>%
   flextable(col_keys = c("Age group","M","F","Total")) %>%
+  add_header_lines(values = title_text) %>%
   theme_vanilla() %>%
   bg(part = "all", bg = "white") %>%              # white background for dark-mode readability
   bold(part = "header", bold = TRUE) %>%

@@ -42,8 +42,17 @@ row_counts <- tibble(
   select(Type, n, `% of Any`)
 
 # Flextable (white background)
+title_text <- paste0("Adverse events recorded")
+
+note_text <- paste0(
+  "Note: Data is from the AEs and progress notes form. Generated ",
+  format(Sys.Date(), "%Y-%m-%d")
+)
+
+
 table_06.17 <- row_counts %>%
   flextable() %>%
+  add_header_lines(values = title_text) %>%
   theme_vanilla() %>%
   bg(part = "all", bg = "white") %>%
   bold(part = "header", bold = TRUE) %>%
@@ -51,6 +60,10 @@ table_06.17 <- row_counts %>%
   align(j = c("n", "% of Any"), align = "center", part = "all") %>%
   colformat_int(j = "n", big.mark = ",") %>%
   colformat_num(j = "% of Any", digits = 1, suffix = "%") %>%
+  add_footer_lines(values = note_text) %>%
+  bg(part = "footer", bg = "white") %>%
+  italic(part = "footer") %>%
+  hline_top(part = "footer", border = officer::fp_border(color = "grey70")) %>%
   autofit()
 
 table_06.17

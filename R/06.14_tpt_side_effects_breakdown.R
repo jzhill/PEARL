@@ -214,8 +214,13 @@ sx_long_out <- sx_long %>%
   )
 
 # ---- Flextable --------------------------------------------------------------
+title_text <- paste0(
+  "TPT reported symptoms per timepoint — generated ", format(Sys.Date(), "%Y-%m-%d")
+)
+
 table_06.14 <- sx_long_out %>%
   flextable(col_keys = c("Group","Item","1 month","3 month","4 month","AE form","Ever")) %>%
+  add_header_lines(values = title_text) %>%
   theme_vanilla() %>%
   bg(part = "all", bg = "white") %>%
   bold(part = "header", bold = TRUE) %>%
