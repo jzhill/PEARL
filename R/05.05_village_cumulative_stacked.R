@@ -20,12 +20,7 @@ plot_05.05 <- ggplot(village_data_cum, aes(x = week_reg, y = cum_screened, fill 
     breaks = (seq(0, plot_05.05_maxy, by = 1000))
     ) +
   theme_light() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  geom_hline(yintercept = 15000) +
-  annotate(
-    "text", label = "Betio target = 15,000",
-    x = min_month + months(6), y = 14500, size = 4
-  )
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
   
 
 plot_05.05

@@ -10,7 +10,7 @@ plot_05.03_maxy <- max(plot_05.03_data$prop_reg_screen, na.rm = TRUE)
 plot_05.03 <- ggplot(plot_05.03_data, aes(x = record_id, y = prop_reg_screen, fill = village)) +
   geom_bar(stat = "identity") +
   labs(x = "EA", y = "Proportion Registered", 
-       title = "Proportion of Population Registered by EA",
+       title = "Coverage (registered/eligible) by EA",
        fill = "village") +
   scale_y_continuous(
     limits = c(0, plot_05.03_maxy),                    # Ensure y-axis is from 0 to 1

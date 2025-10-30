@@ -10,6 +10,7 @@ plot_05.02 <- age_pyramid(plot_05.02_data, age_group = "age_cat", split_by = "en
     x = "Count",
     y = "Age category"
   ) +
+  labs(title = "PEARL participant population pyramid", x = NULL) +
   theme_light() +
   theme(legend.title = element_blank())  # Remove legend title
 
