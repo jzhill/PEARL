@@ -26,6 +26,22 @@ max_week <- floor_date(max(screening_data$en_date_visit, na.rm = TRUE), unit = "
 max_month <- floor_date(max(screening_data$en_date_visit, na.rm = TRUE), unit = "month")
 current_date <- format(Sys.Date(), "%Y-%m-%d")
 
+# Household record flags -----------------
+
+household_data <- household_data %>%
+  mutate(
+    hh_size = suppressWarnings(as.numeric(hh_size)),
+    # Reached if status is enumerated, invited or refused or if status is blank or not visited, but hh_size is filled
+    # Not include: "4 Removed", status blank or not visited, and hh_size not filled
+    hh_reached = case_when(
+      hh_status %in% c("2 Enumerated", "3 Invited", "5 Refused") ~ TRUE,
+      hh_status == "1 Not visited" & !is.na(hh_size) & hh_size > 0 ~ TRUE,
+      is.na(hh_status) & !is.na(hh_size) & hh_size > 0 ~ TRUE,
+      TRUE ~ FALSE
+    ),
+    hh_active = !(hh_status %in% c("4 Removed"))
+  )
+
 # Helper binary columns creation ----------------------
 
 xr_result_values   <- c("1 cw TB","2 CAD 50 plus","3 Uncertain","4 Unlikely","5 CAD under 50")
@@ -204,7 +220,7 @@ ea_pivot_screen_mf <- screening_data %>%
 
 # Aggregate household data
 ea_pivot_hh <- household_data %>%
-  filter(!is.na(hh_ea_id) & hh_ea_id != "") %>%
+  filter(hh_reached, !is.na(hh_ea_id) & hh_ea_id != "") %>%
   group_by(hh_ea_id) %>%
   summarise(
     pop_all_new = sum(hh_all, na.rm = TRUE),
@@ -257,6 +273,7 @@ village_data <- ea_data %>%
 
 # Aggregate data from household_data
 village_data_hh <- household_data %>%
+  filter(hh_reached) %>%
   group_by(hh_village_ea) %>%
   summarise(
     hh_enum = n(),
@@ -286,7 +303,7 @@ village_data <- village_data %>%
   mutate(prop_reg = round(ifelse(pop_2020 == 0, NA, pop_reg / pop_2020), 2)) %>%  # Note denominator is 2020 population
   mutate(prop_hh_enum = round(ifelse(hh_2020 == 0, NA, hh_enum / hh_2020), 2)) %>%   # Note denominator is 2020 n households
   mutate(prop_reg_elig = round(ifelse(pop_elig == 0, NA, pop_reg / pop_elig), 2))   # Note denominator is 2020 n households
-  
+
 # Create variable for village ordered by date_started
 village_order <- village_data %>%
   arrange(date_started) %>%
@@ -315,7 +332,7 @@ week_range_complete <- seq.Date(
 village_data_cum <- screening_data %>%
   mutate(
     village = if_else(is.na(village) | village == "" | !(village %in% villages_gte_100),
-    "Other or unknown", village)
+                      "Other or unknown", village)
   ) %>%
   filter(!is.na(week_reg)) %>%
   group_by(village, week_reg) %>%
@@ -617,6 +634,27 @@ household_data <- household_data %>%
     )
   )
 
+# ## Number active households with coords per EA (west to east) ----------------
+# 
+# household_data_all <- household_data_all %>%
+#   mutate(.row_id = row_number()) %>%
+#   group_by(hh_ea_id) %>%
+#   arrange(long, .by_group = TRUE) %>%
+#   mutate(
+#     .cond = hh_active & !is.na(long),
+#     .ord  = if_else(.cond, cumsum(.cond), NA_integer_),
+#     hh_ea_key = if_else(.cond, sprintf("%02d", .ord - 1L), NA_character_)
+#   ) %>%
+#   arrange(.row_id) %>%
+#   ungroup() %>%
+#   select(-.row_id, -.cond, -.ord)
+# 
+# # (Optional sanity check)
+# household_data_all %>% filter(hh_active, !is.na(long)) %>%
+#   count(hh_ea_id) %>% filter(n > 100) %>%
+#   { if(nrow(.)>0) warning("Some EAs have >100 active households (key space 00–99): ", paste(.$hh_ea_id, collapse=", ")) }
+# 
+# 
 ## Create hh layer -----------------------------------------------------------------
 
 layer_hh_betio_3832 <- household_data %>%
@@ -633,18 +671,165 @@ screening_data <- screening_data %>%
   )
 
 
-# --- Unifying metrics builder for tables and time aggregation --------------
+# Metrics aggregated across time and geography --------------
+
+## Helper functions for each group of metrics -----------------
+
+# SCREENING: core counts + percentages by .key
+screen_core_by_key <- function(df_keyed) {
+  df_keyed %>%
+    group_by(.key) %>%
+    summarise(
+      
+      # activity
+      reg        = n(),
+      tst_placed = sum(tst_success == "Yes", na.rm = TRUE),
+      tst_read   = sum(tst_read_bin,        na.rm = TRUE),
+      cxr_elig   = sum(calc_xr_elig,        na.rm = TRUE),
+      cxr_done   = sum(cxr_done == "Yes",   na.rm = TRUE),
+      cxr_result = sum(xr_resulted,         na.rm = TRUE),
+      tbdec      = sum(tbdec_bin,           na.rm = TRUE),
+      anyrx      = sum(!is.na(calc_any_treatment), na.rm = TRUE),
+      xpert      = sum(spuxpt_labreq_lab,   na.rm = TRUE),
+      
+      # households screened = unique dwellings recorded by screening teams
+      hh_screened = n_distinct(dwelling_name, na.rm = TRUE),
+      
+      # referrals & outcomes
+      ref_ntp    = sum(referred_ntp, na.rm = TRUE),
+      ref_nlp    = sum(referred_nlp, na.rm = TRUE),
+      ref_hbv    = sum(prerx_hbv_1 == "Positive", na.rm = TRUE),
+      nlp_outcome_recorded = sum(nlp_outcome, na.rm = TRUE),
+      ntp_outcome_recorded = sum(ntp_outcome, na.rm = TRUE),
+      
+      # percentages
+      tst_place_pct = if_else(reg        > 0, 100 * tst_placed / reg,        NA_real_),
+      tst_read_pct  = if_else(tst_placed > 0, 100 * tst_read   / tst_placed, NA_real_),
+      tbdec_pct     = if_else(reg        > 0, 100 * tbdec      / reg,        NA_real_),
+      anyrx_pct     = if_else(reg        > 0, 100 * anyrx      / reg,        NA_real_),
+      xpert_pct     = if_else(reg        > 0, 100 * xpert      / reg,        NA_real_),
+      cxr_pct       = if_else(cxr_elig   > 0, 100 * cxr_done   / cxr_elig,   NA_real_),
+      cxr_res_pct   = if_else(cxr_done   > 0, 100 * cxr_result / cxr_done,   NA_real_),
+      ntp_out_pct   = if_else(ref_ntp    > 0, ntp_outcome_recorded / ref_ntp * 100, NA_real_),
+      nlp_out_pct   = if_else(ref_nlp    > 0, nlp_outcome_recorded / ref_nlp * 100, NA_real_),
+      .groups = "drop"
+    )
+}
+
+# SCREENING: TB decision distribution by .key (wide)
+tb_dist_by_key <- function(df_keyed) {
+  df_keyed %>%
+    mutate(tb_decision = fct_na_value_to_level(factor(tb_decision), "Missing")) %>%
+    count(.key, tb_decision, name = "n") %>%
+    pivot_wider(names_from = tb_decision, values_from = n, values_fill = 0) %>%
+    rename(
+      tbdec_prestb  = `Presumptive TB`,
+      tbdec_ro      = `Ruled out TB`,
+      tbdec_unc     = `TB status uncertain`,
+      tbdec_missing = `Missing`
+    )
+}
+
+# SCREENING: TST distribution by .key (wide)
+tst_dist_by_key <- function(df_keyed) {
+  df_keyed %>%
+    mutate(tst_read_positive = fct_na_value_to_level(factor(tst_read_positive), "Missing")) %>%
+    count(.key, tst_read_positive, name = "n") %>%
+    pivot_wider(names_from = tst_read_positive, values_from = n, values_fill = 0) %>%
+    rename(
+      tst_neg     = `Negative TST`,
+      tst_pos     = `Positive TST`,
+      tst_missing = `Missing`
+    )
+}
+
+# SCREENING: TPT assessment pathway counts/percents by .key
+tpt_assess_by_key <- function(df_keyed) {
+  df_keyed %>%
+    group_by(.key) %>%
+    summarise(
+      tpt_should_assess = sum(
+        (tst_read_positive == "Positive TST") &
+          (tb_decision == "Ruled out TB" | ntp_diagnosis == "Ruled out"),
+        na.rm = TRUE
+      ),
+      tpt_assessment_done = sum(
+        (prerx_eligible %in% c("Yes","No")) |
+          (exit_reason_screen == "TPT - withdraw consent and prefer not to continue"),
+        na.rm = TRUE
+      ),
+      tpt_eligible_n = sum(prerx_eligible == "Yes", na.rm = TRUE),
+      tpt_started_n  = sum(prerx_start == TRUE,     na.rm = TRUE),
+      
+      tpt_assessed_of_should_pct = if_else(
+        tpt_should_assess > 0, 100 * tpt_assessment_done / tpt_should_assess, NA_real_
+      ),
+      tpt_started_of_eligible_pct = if_else(
+        tpt_eligible_n > 0, 100 * sum(prerx_start == TRUE, na.rm = TRUE) / tpt_eligible_n, NA_real_
+      ),
+      tpt_eligible_of_started_pct = if_else(
+        tpt_started_n  > 0, 100 * sum(prerx_eligible == "Yes" & prerx_start == TRUE, na.rm = TRUE) / tpt_started_n, NA_real_
+      ),
+      
+      # risk assessment steps
+      tptrf_assessed_n       = sum(tptrf_assessed,         na.rm = TRUE),
+      tptrf_alt_needed_n     = sum(tptrf_alt_needed,       na.rm = TRUE),
+      tptrf_alt_requested_n  = sum(tptrf_alt_requested,    na.rm = TRUE),
+      tptrf_alt_result_n     = sum(tptrf_alt_result,       na.rm = TRUE),
+      tptrf_risk_assigned_n  = sum(tptrf_risk_assigned,    na.rm = TRUE),
+      tptrf_as_expected_n    = sum(tptrf_risk_as_expected, na.rm = TRUE),
+      .groups = "drop"
+    )
+}
+
+# TREATMENT: cohort metrics by .key (pre-keyed to start period or area)
+tpt_cohort_by_key <- function(tpt_keyed) {
+  tpt_keyed %>%
+    group_by(.key) %>%
+    summarise(
+      tpt_start               = n(),
+      tpt_outcome_assigned    = sum(!is.na(tpt_outcome_reason), na.rm = TRUE),
+      tpt_completed           = sum(tpt_outcome_reason == "Completed", na.rm = TRUE),
+      
+      tpt_1m_expected         = sum(tpt_1m_expected, na.rm = TRUE),
+      tpt_1m_done             = sum(tpt_1m_done,     na.rm = TRUE),
+      tpt_3m_expected         = sum(tpt_3m_expected, na.rm = TRUE),
+      tpt_3m_done             = sum(tpt_3m_done,     na.rm = TRUE),
+      tpt_4m_expected         = sum(tpt_4m_expected, na.rm = TRUE),
+      tpt_4m_done             = sum(tpt_4m_done,     na.rm = TRUE),
+      
+      tpt_outcome_assigned_pct = if_else(tpt_start > 0, 100 * tpt_outcome_assigned / tpt_start, NA_real_),
+      tpt_completed_pct        = if_else(tpt_start > 0, 100 * tpt_completed        / tpt_start, NA_real_),
+      tpt_1m_done_pct          = if_else(tpt_1m_expected > 0, 100 * tpt_1m_done / tpt_1m_expected, NA_real_),
+      tpt_3m_done_pct          = if_else(tpt_3m_expected > 0, 100 * tpt_3m_done / tpt_3m_expected, NA_real_),
+      tpt_4m_done_pct          = if_else(tpt_4m_expected > 0, 100 * tpt_4m_done / tpt_4m_expected, NA_real_),
+      .groups = "drop"
+    )
+}
+
+# HOUSEHOLDS: counts by .key (expects hh_reached filtered in caller or here)
+hh_counts_by_key <- function(hh_keyed, require_reached = TRUE) {
+  df <- if (require_reached) filter(hh_keyed, hh_reached) else hh_keyed
+  df %>%
+    count(.key, name = "hh_enum")
+}
+
+# Utility: zero-fill selected pure-count columns, keep % as NA
+zero_fill_counts <- function(df, cols) {
+  df %>% mutate(across(all_of(cols), ~ replace_na(., 0)))
+}
+
+## Aggregation functions for time and area, using helper metric functions ------------------
 
 build_time_agg <- function(screening_data, household_data, treatment_data,
                            freq = c("week","month"), week_start = 1,
                            min_date = NULL, max_date = NULL) {
   freq <- match.arg(freq)
   
-  # key columns by frequency
+  # keys by frequency
   key_col <- if (freq == "week") "week_reg"     else "month_reg"
   key_hh  <- if (freq == "week") "week_enum"    else "month_enum"
   key_ts  <- if (freq == "week") "week_start"   else "month_start"
-  key_to  <- if (freq == "week") "week_outcome" else "month_outcome"
   
   # bounds
   min_key <- if (freq == "week") min(screening_data$week_reg,  na.rm = TRUE) else min(screening_data$month_reg,  na.rm = TRUE)
@@ -654,16 +839,16 @@ build_time_agg <- function(screening_data, household_data, treatment_data,
   
   # full sequence
   full_seq <- if (freq == "week") {
-    seq.Date(from = floor_date(min_key, "week", week_start = week_start),
-             to   = floor_date(max_key, "week", week_start = week_start),
+    seq.Date(from = lubridate::floor_date(min_key, "week", week_start = week_start),
+             to   = lubridate::floor_date(max_key, "week", week_start = week_start),
              by   = "week")
   } else {
-    seq.Date(from = floor_date(min_key, "month"),
-             to   = floor_date(max_key, "month"),
+    seq.Date(from = lubridate::floor_date(min_key, "month"),
+             to   = lubridate::floor_date(max_key, "month"),
              by   = "month")
   }
   
-  # Check fields are logical, should be from loading and tidying already
+  # Safety: logical columns present
   stopifnot(
     all(vapply(
       screening_data[c("tst_read_bin","calc_xr_elig","tbdec_bin","spuxpt_labreq_lab",
@@ -673,210 +858,64 @@ build_time_agg <- function(screening_data, household_data, treatment_data,
     ))
   )
   
-  ## Enumeration (households) -------------------------
-  
-  hh_counts <- household_data %>%
-    drop_na(all_of(key_hh)) %>%
-    count(.data[[key_hh]], name = "hh_enum") %>%
-    transmute(period_start = .data[[key_hh]], hh_enum = hh_enum) %>%
-    complete(period_start = full_seq, fill = list(hh_enum = 0))
-  
-  ## Screening (activity & pathway) ---------------------------------
-  
-  # One grouped summarise over screening_data: all core counts, percentages,
-  # households reached, referrals, follow-up outcomes, XR resulted.
-  scr_core <- screening_data %>%
+  # Standardise to ".key"
+  scr_keyed <- screening_data %>%
     filter(.data[[key_col]] <= max_key) %>%
-    group_by(period_start = .data[[key_col]]) %>%
-    summarise(
-      # activity
-      reg        = n(),
-      tst_placed = sum(tst_success == "Yes", na.rm = TRUE),
-      tst_read   = sum(tst_read_bin,       na.rm = TRUE),
-      cxr_elig   = sum(calc_xr_elig,       na.rm = TRUE),
-      cxr_done   = sum(cxr_done   == "Yes", na.rm = TRUE),
-      cxr_result = sum(xr_resulted,        na.rm = TRUE),
-      tbdec      = sum(tbdec_bin,          na.rm = TRUE),
-      anyrx      = sum(!is.na(calc_any_treatment), na.rm = TRUE),
-      xpert      = sum(spuxpt_labreq_lab,  na.rm = TRUE),
-      
-      # households reached
-      households_reached = n_distinct(dwelling_name),
-      
-      # referrals
-      ref_ntp    = sum(referred_ntp, na.rm = TRUE),
-      ref_nlp    = sum(referred_nlp, na.rm = TRUE),
-      ref_hbv    = sum(prerx_hbv_1 == "Positive", na.rm = TRUE),
-      
-      # follow-up outcomes
-      nlp_outcome_recorded = sum(nlp_outcome, na.rm = TRUE),
-      ntp_outcome_recorded = sum(ntp_outcome, na.rm = TRUE),
-      
-      # percentages (use the scalars defined above)
-      tst_place_pct = if_else(reg        > 0, tst_placed / reg        * 100, NA_real_),
-      tst_read_pct  = if_else(tst_placed > 0, tst_read   / tst_placed * 100, NA_real_),
-      tbdec_pct     = if_else(reg        > 0, tbdec      / reg        * 100, NA_real_),
-      anyrx_pct     = if_else(reg        > 0, anyrx      / reg        * 100, NA_real_),
-      xpert_pct     = if_else(reg        > 0, xpert      / reg        * 100, NA_real_),
-      cxr_pct       = if_else(cxr_elig   > 0, cxr_done   / cxr_elig   * 100, NA_real_),
-      
-      # new percentages
-      cxr_res_pct   = if_else(cxr_done   > 0, cxr_result / cxr_done   * 100, NA_real_),
-      ntp_out_pct   = if_else(ref_ntp    > 0, ntp_outcome_recorded / ref_ntp * 100, NA_real_),
-      nlp_out_pct   = if_else(ref_nlp    > 0, nlp_outcome_recorded / ref_nlp * 100, NA_real_),
-      
-      .groups = "drop"
-    ) %>%
-    complete(period_start = full_seq)
+    mutate(.key = .data[[key_col]])
   
-  ## Screening results (distributions) -------------------------------
+  hh_keyed <- household_data %>%
+    filter(!is.na(.data[[key_hh]])) %>%
+    mutate(.key = .data[[key_hh]])
   
-  tb_dist <- screening_data %>%
-    mutate(tb_decision = fct_explicit_na(factor(tb_decision), na_level = "Missing")) %>%
-    count(.data[[key_col]], tb_decision, name = "n") %>%
-    mutate(period_start = .data[[key_col]]) %>%
-    select(-all_of(key_col)) %>%
-    pivot_wider(names_from = tb_decision, values_from = n, values_fill = 0) %>%
-    rename(tbdec_prestb = `Presumptive TB`,
-           tbdec_ro     = `Ruled out TB`,
-           tbdec_unc    = `TB status uncertain`,
-           tbdec_missing= `Missing`) %>%
-    complete(period_start = full_seq,
+  tpt_keyed <- treatment_data %>%
+    filter(!is.na(.data[[key_ts]])) %>%
+    mutate(.key = .data[[key_ts]])
+  
+  # Build via helpers
+  scr_core <- screen_core_by_key(scr_keyed) %>%
+    complete(.key = full_seq)
+  
+  tb_dist  <- tb_dist_by_key(scr_keyed) %>%
+    complete(.key = full_seq,
              fill = list(tbdec_prestb = 0, tbdec_ro = 0, tbdec_unc = 0, tbdec_missing = 0))
   
-  tst_dist <- screening_data %>%
-    mutate(tst_read_positive = fct_explicit_na(factor(tst_read_positive), na_level = "Missing")) %>%
-    count(.data[[key_col]], tst_read_positive, name = "n") %>%
-    mutate(period_start = .data[[key_col]]) %>%
-    select(-all_of(key_col)) %>%
-    pivot_wider(names_from = tst_read_positive, values_from = n, values_fill = 0) %>%
-    rename(tst_neg = `Negative TST`,
-           tst_pos = `Positive TST`,
-           tst_missing = `Missing`) %>%
-    complete(period_start = full_seq,
+  tst_dist <- tst_dist_by_key(scr_keyed) %>%
+    complete(.key = full_seq,
              fill = list(tst_neg = 0, tst_pos = 0, tst_missing = 0))
   
-  ## Treatment assessment pathway ----------------
+  tpt_ax   <- tpt_assess_by_key(scr_keyed) %>%
+    complete(.key = full_seq)
   
-  tpt_ax <- screening_data %>%
-    filter(.data[[key_col]] <= max_key) %>%
-    group_by(period_start = .data[[key_col]]) %>%
-    summarise(
-      
-      # Who should be assessed for TPT?
-      tpt_should_assess = sum(
-        (tst_read_positive == "Positive TST") &
-          (tb_decision == "Ruled out TB" | ntp_diagnosis == "Ruled out"),
-        na.rm = TRUE
-      ),
-      
-      # Who completed TPT assessment?
-      tpt_assessment_done = sum(
-        (prerx_eligible %in% c("Yes","No")) |
-          (exit_reason_screen == "TPT - withdraw consent and prefer not to continue"),
-        na.rm = TRUE
-      ),
-      
-      # Helper denominators
-      tpt_eligible_n = sum(prerx_eligible == "Yes", na.rm = TRUE),
-      tpt_started_n  = sum(prerx_start == TRUE,     na.rm = TRUE),
-      
-      # Percentages
-      tpt_assessed_of_should_pct = if_else(
-        tpt_should_assess > 0,
-        100 * tpt_assessment_done / tpt_should_assess,
-        NA_real_
-      ),
-      
-      tpt_started_of_eligible_pct = if_else(
-        tpt_eligible_n > 0,
-        100 * sum(prerx_start == TRUE, na.rm = TRUE) / tpt_eligible_n,
-        NA_real_
-      ),
-      
-      tpt_eligible_of_started_pct = if_else(
-        tpt_started_n > 0,
-        100 * sum(prerx_eligible == "Yes" & prerx_start == TRUE, na.rm = TRUE) / tpt_started_n,
-        NA_real_
-      ),
-      
-      # TPT risk assessment step 
-      tptrf_assessed_n       = sum(tptrf_assessed,        na.rm = TRUE),
-      tptrf_alt_needed_n     = sum(tptrf_alt_needed,      na.rm = TRUE),
-      tptrf_alt_requested_n  = sum(tptrf_alt_requested,   na.rm = TRUE),
-      tptrf_alt_result_n     = sum(tptrf_alt_result,      na.rm = TRUE),
-      tptrf_risk_assigned_n  = sum(tptrf_risk_assigned,   na.rm = TRUE),
-      tptrf_as_expected_n    = sum(tptrf_risk_as_expected,na.rm = TRUE),
-      
-      .groups = "drop"
-    ) %>%
-    complete(period_start = full_seq)
+  tpt_rx   <- tpt_cohort_by_key(tpt_keyed) %>%
+    complete(.key = full_seq,
+             fill = list(
+               tpt_start = 0, tpt_outcome_assigned = 0, tpt_completed = 0,
+               tpt_1m_expected = 0, tpt_1m_done = 0,
+               tpt_3m_expected = 0, tpt_3m_done = 0,
+               tpt_4m_expected = 0, tpt_4m_done = 0
+             ))
   
-  ## Treatment (starts, reviews & completions) ----------------
+  hh_counts <- hh_counts_by_key(hh_keyed) %>%
+    complete(.key = full_seq, fill = list(hh_enum = 0))
   
-  tpt_rx <- treatment_data %>%
-    # key every record to its start period (week_start / month_start)
-    drop_na(all_of(key_ts)) %>%
-    group_by(period_start = .data[[key_ts]]) %>%
-    summarise(
-      # cohort size (starts in this period)
-      tpt_start               = n(),
-      # outcomes tied to this start cohort (regardless of outcome date)
-      tpt_outcome_assigned    = sum(!is.na(tpt_outcome_reason), na.rm = TRUE),
-      tpt_completed           = sum(tpt_outcome_reason == "Completed", na.rm = TRUE),
-      
-      # review expectations & completions
-      tpt_1m_expected         = sum(tpt_1m_expected, na.rm = TRUE),
-      tpt_1m_done             = sum(tpt_1m_done,     na.rm = TRUE),
-      tpt_3m_expected         = sum(tpt_3m_expected, na.rm = TRUE),
-      tpt_3m_done             = sum(tpt_3m_done,     na.rm = TRUE),
-      tpt_4m_expected         = sum(tpt_4m_expected, na.rm = TRUE),
-      tpt_4m_done             = sum(tpt_4m_done,     na.rm = TRUE),
-      .groups = "drop"
-    ) %>%
-    complete(
-      period_start = full_seq,
-      fill = list(
-        tpt_start = 0,
-        tpt_outcome_assigned = 0,
-        tpt_completed = 0,
-        tpt_1m_expected = 0, tpt_1m_done = 0,
-        tpt_3m_expected = 0, tpt_3m_done = 0,
-        tpt_4m_expected = 0, tpt_4m_done = 0
-      )
-    ) %>%
-    mutate(
-      # treatment support / follow-up quality
-      tpt_outcome_assigned_pct = if_else(tpt_start > 0, 100 * tpt_outcome_assigned / tpt_start, NA_real_),
-      tpt_completed_pct = if_else(tpt_start > 0, 100 * tpt_completed / tpt_start, NA_real_),
-      
-      # review completion percentages (done / expected)
-      tpt_1m_done_pct = if_else(tpt_1m_expected > 0, 100 * tpt_1m_done / tpt_1m_expected, NA_real_),
-      tpt_3m_done_pct = if_else(tpt_3m_expected > 0, 100 * tpt_3m_done / tpt_3m_expected, NA_real_),
-      tpt_4m_done_pct = if_else(tpt_4m_expected > 0, 100 * tpt_4m_done / tpt_4m_expected, NA_real_)
-    )
-  
-  ## Assemble & variants ----------------------------
-  
+  # Assemble
   out <- scr_core %>%
-    left_join(hh_counts, by = "period_start") %>%
-    left_join(tpt_ax, by = "period_start") %>%
-    left_join(tb_dist, by = "period_start") %>%
-    left_join(tst_dist, by = "period_start") %>%
-    left_join(tpt_rx, by = "period_start") %>%
-    mutate(period_start = as.Date(period_start)) %>%
-    mutate(across(
-      c(reg, tst_placed, tst_read, cxr_elig, cxr_done, cxr_result, tbdec, anyrx, xpert,
-        households_reached, ref_ntp, ref_nlp, ref_hbv,
-        nlp_outcome_recorded, ntp_outcome_recorded,
-        hh_enum, tpt_start, tpt_completed, tpt_outcome_assigned,
-        tpt_1m_expected, tpt_1m_done, tpt_3m_expected, tpt_3m_done, tpt_4m_expected, tpt_4m_done,
-        tbdec_prestb, tbdec_ro, tbdec_unc, tbdec_missing,
-        tst_neg, tst_pos, tst_missing, tpt_should_assess, tpt_assessment_done,
-        tptrf_assessed_n, tptrf_alt_needed_n, tptrf_alt_requested_n,
-        tptrf_alt_result_n, tptrf_risk_assigned_n, tptrf_as_expected_n
-      ),
-      ~ replace_na(., 0)
+    left_join(hh_counts, by = ".key") %>%
+    left_join(tpt_ax,    by = ".key") %>%
+    left_join(tb_dist,   by = ".key") %>%
+    left_join(tst_dist,  by = ".key") %>%
+    left_join(tpt_rx,    by = ".key") %>%
+    rename(period_start = .key) %>%
+    zero_fill_counts(c(
+      "reg","tst_placed","tst_read","cxr_elig","cxr_done","cxr_result","tbdec","anyrx","xpert",
+      "hh_screened","ref_ntp","ref_nlp","ref_hbv",
+      "nlp_outcome_recorded","ntp_outcome_recorded","hh_enum",
+      "tpt_start","tpt_completed","tpt_outcome_assigned",
+      "tpt_1m_expected","tpt_1m_done","tpt_3m_expected","tpt_3m_done","tpt_4m_expected","tpt_4m_done",
+      "tbdec_prestb","tbdec_ro","tbdec_unc","tbdec_missing",
+      "tst_neg","tst_pos","tst_missing",
+      "tptrf_assessed_n","tptrf_alt_needed_n","tptrf_alt_requested_n",
+      "tptrf_alt_result_n","tptrf_risk_assigned_n","tptrf_as_expected_n"
     ))
   
   out_na <- out %>%
@@ -886,7 +925,7 @@ build_time_agg <- function(screening_data, household_data, treatment_data,
     select(
       period_start,
       # phases: activity & treatment alongside %
-      reg, households_reached,
+      reg, hh_screened,
       tpt_start, tpt_completed, tpt_outcome_assigned,
       tst_place_pct, tst_read_pct, tbdec_pct, anyrx_pct, xpert_pct, cxr_pct,
       cxr_res_pct, ntp_out_pct, nlp_out_pct, 
@@ -918,7 +957,89 @@ build_time_agg <- function(screening_data, household_data, treatment_data,
   list(data = out, data_na = out_na, data_long = out_long)
 }
 
+build_area_agg <- function(screening_data, household_data, treatment_data,
+                           level = c("ea","village")) {
+  level <- match.arg(level)
+  
+  # Safety: logical columns present
+  stopifnot(
+    all(vapply(
+      screening_data[c("tst_read_bin","calc_xr_elig","tbdec_bin","spuxpt_labreq_lab",
+                       "lep_refer","lepdec_bin","xr_resulted","referred_ntp",
+                       "referred_nlp","nlp_outcome","ntp_outcome")],
+      is.logical, logical(1)
+    ))
+  )
+  
+  # Standardise to ".key"
+  if (level == "ea") {
+    scr_keyed <- screening_data %>%
+      filter(!is.na(ea), ea != "") %>%
+      mutate(.key = ea)
+    
+    hh_keyed <- household_data %>%
+      filter(!is.na(hh_ea_id), hh_ea_id != "") %>%
+      mutate(.key = hh_ea_id)
+    
+    tpt_keyed <- treatment_data %>%
+      filter(!is.na(tpt_ea_id), tpt_ea_id != "") %>%
+      mutate(.key = tpt_ea_id)
+    
+  } else { # village
+    scr_keyed <- screening_data %>%
+      filter(!is.na(village), village != "") %>%
+      mutate(.key = village)
+    
+    hh_keyed <- household_data %>%
+      filter(!is.na(hh_village_ea), hh_village_ea != "") %>%
+      mutate(.key = hh_village_ea)
+    
+    # Attach village to treatment via screening (record_id linkage)
+    tpt_keyed <- treatment_data %>%
+      left_join(screening_data %>% select(record_id, village), by = "record_id") %>%
+      filter(!is.na(village), village != "") %>%
+      mutate(.key = village)
+  }
+  
+  # Build via helpers
+  scr_core <- screen_core_by_key(scr_keyed)
+  tb_dist  <- tb_dist_by_key(scr_keyed)
+  tst_dist <- tst_dist_by_key(scr_keyed)
+  tpt_ax   <- tpt_assess_by_key(scr_keyed)
+  tpt_rx   <- tpt_cohort_by_key(tpt_keyed)
+  hh_counts<- hh_counts_by_key(hh_keyed)
+  
+  # Assemble
+  out <- scr_core %>%
+    full_join(hh_counts, by = ".key") %>%
+    full_join(tpt_ax,    by = ".key") %>%
+    full_join(tb_dist,   by = ".key") %>%
+    full_join(tst_dist,  by = ".key") %>%
+    full_join(tpt_rx,    by = ".key") %>%
+    arrange(.key) %>%
+    rename(area = .key) %>%
+    zero_fill_counts(c(
+      "hh_enum","reg","tst_placed","tst_read","cxr_elig","cxr_done","cxr_result","tbdec","anyrx","xpert",
+      "hh_screened","ref_ntp","ref_nlp","ref_hbv",
+      "nlp_outcome_recorded","ntp_outcome_recorded",
+      "tpt_start","tpt_completed","tpt_outcome_assigned",
+      "tpt_1m_expected","tpt_1m_done","tpt_3m_expected","tpt_3m_done","tpt_4m_expected","tpt_4m_done",
+      "tbdec_prestb","tbdec_ro","tbdec_unc","tbdec_missing",
+      "tst_neg","tst_pos","tst_missing",
+      "tptrf_assessed_n","tptrf_alt_needed_n","tptrf_alt_requested_n",
+      "tptrf_alt_result_n","tptrf_risk_assigned_n","tptrf_as_expected_n"
+    ))
+  
+  out_long <- out %>%
+    pivot_longer(-area, names_to = "Indicator", values_to = "Value")
+  
+  list(data = out, data_long = out_long, level = level)
+}
+
+
 # --- Build both series -----------------------------------------------------
+
+# Build time aggregations
 
 weekly <- build_time_agg(screening_data, household_data, treatment_data, freq = "week",  week_start = 1)
 weekly_data <- weekly$data
@@ -929,3 +1050,13 @@ monthly <- build_time_agg(screening_data, household_data, treatment_data, freq =
 monthly_data <- monthly$data
 monthly_data_na <- monthly$data_na
 monthly_long <- monthly$data_long
+
+# Build area aggregations
+
+ea_agg      <- build_area_agg(screening_data, household_data, treatment_data, level = "ea")
+ea_agg_wide <- ea_agg$data
+ea_agg_long <- ea_agg$data_long
+
+village_agg      <- build_area_agg(screening_data, household_data, treatment_data, level = "village")
+village_agg_wide <- village_agg$data
+village_agg_long <- village_agg$data_long
