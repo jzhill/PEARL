@@ -357,13 +357,19 @@ rename_cb_codes <- function(df, dd, target = c("slug","opt")) {
 
 clean_yesno_values <- function(df) {
   if (is.null(df)) return(df)
-  yesno_cols <- names(df)[sapply(df, function(col) {
+  
+  yesno_cols <- names(df)[vapply(names(df), function(nm) {
+    col <- df[[nm]]
+    if (is.list(col)) return(FALSE)
     if (is.logical(col)) return(FALSE)
-    vals <- na.omit(unique(col))
-    vals_chr <- tolower(str_trim(as.character(vals)))
-    length(vals_chr) > 0 && all(vals_chr %in% c("yes", "no"))
-  })]
+    vals <- suppressWarnings(na.omit(unique(as.character(col))))
+    if (!length(vals)) return(FALSE)
+    vals_chr <- tolower(str_trim(vals))
+    all(vals_chr %in% c("yes", "no"))
+  }, logical(1))]
+  
   if (!length(yesno_cols)) return(df)
+  
   df %>%
     mutate(across(all_of(yesno_cols), ~ case_when(
       tolower(str_trim(as.character(.))) == "yes" ~ "Yes",
@@ -520,13 +526,17 @@ convert_field_types <- function(data, dd) {
   # Any columns that look strictly like yes/no values -> logical
   # This also picks up @CALCTEXT that only resolves Yes/No
   
-  yesno_cols <- names(data)[sapply(data, function(col) {
+  yesno_cols <- names(data)[vapply(names(data), function(nm) {
+    col <- data[[nm]]
+    # Skip lists and non-atomic
+    if (is.list(col) || !is.atomic(col)) return(FALSE)
     if (is.logical(col)) return(FALSE)
-    vals <- unique(na.omit(col))
-    if (!length(vals) || length(vals) > 2) return(FALSE)
+    vals <- suppressWarnings(unique(na.omit(as.character(col))))
+    if (length(vals) == 0 || length(vals) > 2) return(FALSE)
     toks <- unique(yn_token(vals))
-    length(toks) == 2 && all(sort(toks) == c("no","yes"))
-  })]
+    isTRUE(length(toks) == 2 && all(sort(toks) == c("no", "yes")))
+  }, logical(1))]
+  
   if (length(yesno_cols)) {
     data <- data %>%
       mutate(across(all_of(yesno_cols), ~ {
