@@ -8,6 +8,7 @@
   dir.create(paste0(getwd(), "/data-raw/screening"), showWarnings = F)
   dir.create(paste0(getwd(), "/data-raw/treatment"), showWarnings = F)
   dir.create(paste0(getwd(), "/figures"), showWarnings = F)
+  dir.create(paste0(getwd(), "/ea_maps"), showWarnings = F)
   dir.create(paste0(getwd(), "/Quarto"), showWarnings = F)
   dir.create(paste0(getwd(), "/R"), showWarnings = F)
   dir.create(paste0(getwd(), "/reports"), showWarnings = F)
