@@ -187,191 +187,8 @@ household_data <- household_data %>%
   left_join(hh_pivot, by = "record_id")
 
 
-# EA level aggregation ------------------------------------
-
-## Pivot with count or sum for each field per EA into the EA dataset -----------------------------
-
-# Aggregate screening data
-ea_pivot_screen <- screening_data %>%
-  filter(!is.na(ea) & ea != "") %>%
-  group_by(ea) %>%
-  summarise(
-    pop_reg_screen_new = n(),
-    date_screen_new = min(en_date_visit, na.rm = TRUE),
-    .groups = "drop"
-  ) %>%
-  rename(record_id = ea)
-
-ea_pivot_screen_mf <- screening_data %>%
-  filter(!is.na(ea) & ea != "" & en_sex %in% c("M", "F")) %>%
-  mutate(en_sex = tolower(en_sex)) %>%
-  group_by(ea, en_sex) %>%
-  summarise(count = n(), .groups = "drop") %>%
-  pivot_wider(names_from = en_sex, values_from = count, names_prefix = "pop_reg_screen_") %>%
-  mutate(
-    pop_reg_screen_m = replace_na(pop_reg_screen_m, 0),
-    pop_reg_screen_f = replace_na(pop_reg_screen_f, 0)
-  ) %>%
-  rename(
-    record_id = ea,
-    pop_reg_screen_m_new = pop_reg_screen_m,
-    pop_reg_screen_f_new = pop_reg_screen_f
-  )
-
-# Aggregate household data
-ea_pivot_hh <- household_data %>%
-  filter(hh_reached, !is.na(hh_ea_id) & hh_ea_id != "") %>%
-  group_by(hh_ea_id) %>%
-  summarise(
-    pop_all_new = sum(hh_all, na.rm = TRUE),
-    pop_current_new = sum(hh_size, na.rm = TRUE),
-    pop_elig_new = sum(hh_size_elig, na.rm = TRUE),
-    pop_reg_enum_new = sum(hh_reg, na.rm = TRUE),
-    hh_enum_new = n(),
-    date_enum_new = min(hh_date, na.rm = TRUE),
-    .groups = "drop"
-  ) %>%
-  rename(record_id = hh_ea_id)
-
-ea_pivot <- reduce(c(list(ea_pivot_screen, ea_pivot_screen_mf, ea_pivot_hh)), full_join, by = "record_id")
-
-ea_data <- ea_data %>%
-  select(-any_of(c("pop_reg_screen_new",
-                   "pop_reg_screen_m_new",
-                   "pop_reg_screen_f_new",
-                   "pop_all_new",
-                   "pop_current_new",
-                   "pop_elig_new",
-                   "pop_reg_enum_new",
-                   "hh_enum_new",
-                   "date_enum_new",
-                   "date_screen_new"))) %>%
-  left_join(ea_pivot, by = "record_id")
-
-## Create proportion columns in EA data, round to 2dp ---------------------------
-
-# Note denominator is eligible population
-ea_data <- ea_data %>%
-  mutate(
-    prop_reg_enum = round(ifelse(pop_elig_new == 0, NA, pop_reg_enum_new / pop_elig_new), 2) %>% replace_na(NA_real_),
-    prop_reg_screen = round(ifelse(pop_elig_new == 0, NA, pop_reg_screen_new / pop_elig_new), 2) %>% replace_na(NA_real_),
-  )
-
-
-# Village level aggregation ----------------------------
-
-## Village data ---------------------------------
-
-# Aggregate data from ea_data
-village_data <- ea_data %>%
-  group_by(village) %>%
-  summarise(
-    pop_2020 = sum(pop_2020, na.rm = TRUE),
-    hh_2020 = sum(hh_2020, na.rm = TRUE)
-  ) %>%
-  ungroup()
-
-# Aggregate data from household_data
-village_data_hh <- household_data %>%
-  filter(hh_reached) %>%
-  group_by(hh_village_ea) %>%
-  summarise(
-    hh_enum = n(),
-    pop_elig = sum(hh_size_elig, na.rm = TRUE),
-    pop_enum = sum(hh_size, na.rm = TRUE)
-  ) %>%
-  ungroup() %>% 
-  rename(village = hh_village_ea)
-
-# Aggregate data from screening_data
-village_data_screen <- screening_data %>%
-  group_by(village) %>%
-  summarise(
-    pop_reg = n(),
-    date_started = min(en_date_visit, na.rm = TRUE)
-  ) %>%
-  ungroup()
-
-# Merge datasets using left_join to retain all villages from ea_data
-village_data <- village_data %>%
-  select(-any_of(c("hh_enum", "pop_elig", "pop_enum", "pop_reg"))) %>% 
-  left_join(village_data_hh, by = "village") %>%
-  left_join(village_data_screen, by = "village")
-
-# Create columns for village proportions
-village_data <- village_data %>% 
-  mutate(prop_reg = round(ifelse(pop_2020 == 0, NA, pop_reg / pop_2020), 2)) %>%  # Note denominator is 2020 population
-  mutate(prop_hh_enum = round(ifelse(hh_2020 == 0, NA, hh_enum / hh_2020), 2)) %>%   # Note denominator is 2020 n households
-  mutate(prop_reg_elig = round(ifelse(pop_elig == 0, NA, pop_reg / pop_elig), 2))   # Note denominator is 2020 n households
-
-# Create variable for village ordered by date_started
-village_order <- village_data %>%
-  arrange(date_started) %>%
-  pull(village)
-
-# Convert village to a factor with levels in order of first reached
-village_data <- village_data %>%
-  mutate(village = factor(village, levels = village_order))
-
-
-## Cumulative village data ---------------------------------
-
-# Identify villages with a maximum cumulative total >= 100
-villages_gte_100 <- village_data %>%
-  filter(pop_reg >= 100) %>%
-  pull(village)
-
-# Define overall date range based on week_reg in screening_data
-week_range_complete <- seq.Date(
-  from = min(screening_data$week_reg, na.rm = TRUE),
-  to = max(screening_data$week_reg, na.rm = TRUE),
-  by = "week"
-)
-
-# Calculate cumulative screened counts by village and week from screening_data
-village_data_cum <- screening_data %>%
-  mutate(
-    village = if_else(is.na(village) | village == "" | !(village %in% villages_gte_100),
-                      "Other or unknown", village)
-  ) %>%
-  filter(!is.na(week_reg)) %>%
-  group_by(village, week_reg) %>%
-  summarise(n_screened = n(), .groups = "drop") %>%
-  arrange(village, week_reg) %>%
-  complete(village, week_reg = week_range_complete, fill = list(n_screened = 0)) %>% # Fill missing weeks first
-  group_by(village) %>%
-  mutate(cum_screened = cumsum(n_screened)) %>%
-  ungroup()
-
-# Join village population and calculate cumulative proportion safely
-# Note that we know the 2020 population for all villages
-# The eligible village population is only known AFTER completing the village
-# Proportions for villages in progress are not correct!
-village_data_cum <- village_data_cum %>%
-  left_join(village_data, by = "village") %>%
-  mutate(
-    pop_2020 = ifelse(is.na(pop_2020) | pop_2020 == 0, NA, pop_2020),
-    cum_prop = ifelse(is.na(pop_2020), NA, cum_screened / pop_2020),  # Denominator is 2020 population
-    pop_elig = ifelse(is.na(pop_elig) | pop_elig == 0, NA, pop_elig),
-    cum_prop_elig = ifelse(is.na(pop_elig), NA, cum_screened / pop_elig)  # Denominator is eligible population
-  )
-
-# Determine first week each village was reached
-village_order_cum <- village_data_cum %>%
-  filter(cum_screened > 0) %>%
-  group_by(village) %>%
-  summarise(first_week = min(week_reg, na.rm = TRUE), .groups = "drop") %>%
-  arrange(first_week) %>%
-  pull(village)
-
-# Ensure 'Other or unknown' is always the first level
-village_order_cum <- c(setdiff(village_order_cum, "Other or unknown"), "Other or unknown")
-
-# Convert village to a factor with levels in order of first reached
-village_data_cum <- village_data_cum %>%
-  mutate(village = factor(village, levels = village_order_cum))
-
 # ---- TPT risk assessment flags (aligned with calc_tptrfs) --------------------
+
 # Expected levels of screening_data$calc_tptrfs:
 # "01 ALT done - HIGH RISK"
 # "02 ALT done - MODERATE HIGH RISK"
@@ -440,7 +257,7 @@ treatment_data <- treatment_data %>%
     tpt_end_date_real = as.Date(ifelse(is.infinite(.tpt_end_real_num), NA, .tpt_end_real_num), origin = "1970-01-01"),
     
     # --- PROVISIONAL end date: real end if known, else today()
-    tpt_end_date_prov = coalesce(tpt_end_date_real, lubridate::today()),
+    tpt_end_date_prov = coalesce(tpt_end_date_real, today()),
     
     # Durations
     tpt_dur_real = as.integer(difftime(tpt_end_date_real, tpt_start_date, units = "days")),  # NA if still active
@@ -547,128 +364,28 @@ sx_any_ever_wide <- sx_long %>%
   group_by(record_id) %>%
   summarise(sx_any_ever = any(val, na.rm = TRUE), .groups = "drop")
 
-# Attach everything to treatment_data
+# Attach everything to treatment_data, *idempotently* --------------------
+
+# Collect the names of all derived side-effect columns we are about to join
+sx_derived_cols <- c(
+  setdiff(names(sx_tp_grp_any_true_wide), "record_id"),
+  setdiff(names(sx_tp_grp_all_false_wide), "record_id"),
+  setdiff(names(sx_ever_wide),             "record_id"),
+  setdiff(names(sx_grp_any_ever_wide),     "record_id"),
+  setdiff(names(sx_tp_any_true_wide),      "record_id"),
+  setdiff(names(sx_any_ever_wide),         "record_id")
+) %>% unique()
 
 treatment_data <- treatment_data %>%
+  # 1) drop any previous side-effect derived columns
+  select(-any_of(sx_derived_cols)) %>%
+  # 2) re-attach fresh ones
   left_join(sx_tp_grp_any_true_wide, by = "record_id") %>%
   left_join(sx_tp_grp_all_false_wide, by = "record_id") %>%
-  left_join(sx_ever_wide, by = "record_id") %>%
-  left_join(sx_grp_any_ever_wide, by = "record_id") %>%
-  left_join(sx_tp_any_true_wide, by = "record_id") %>%
-  left_join(sx_any_ever_wide, by = "record_id")
-
-
-# GIS data tidy ----------------------------------------------------------------------
-
-## Join EA data to EA layer -------------------------------------------------------
-
-# Ensure both columns have the same type for joining
-layer_ki_ea_3832$ea_2020 <- as.character(layer_ki_ea_3832$ea_2020)
-ea_data$record_id <- as.character(ea_data$record_id)
-
-# Remove previously joined columns, then join
-layer_ki_ea_3832 <- layer_ki_ea_3832 %>%
-  select(-all_of(grep("^joined_", names(.), value = TRUE))) %>%  # Remove previous joins
-  left_join(ea_data, by = c("ea_2020" = "record_id")) %>%  # Perform join
-  rename_with(~ paste0("joined_", .), .cols = any_of(setdiff(names(ea_data), "record_id")))  # Rename only newly added columns
-
-# Filter to only include EAs with vid of 716
-layer_betio_ea_3832 <- layer_ki_ea_3832 %>%
-  filter(vid == 716)
-
-## Clean household coordinates -------------------------------------------------
-
-# Define office location as sf point (in EPSG:4326 first)
-office_point <- st_sfc(
-  st_point(c(172.943185325, 1.352152047)),
-  crs = 4326
-) %>% st_transform(crs = 3832)
-
-# Create spatial object of GPS coordinates only
-hh_gps_sf <- household_data %>%
-  mutate(
-    gps_lat  = as.numeric(hh_latitude),
-    gps_long = as.numeric(hh_longitude)
-  ) %>%
-  filter(!is.na(gps_lat), !is.na(gps_long)) %>%
-  st_as_sf(coords = c("gps_long", "gps_lat"), crs = 4326) %>%
-  st_transform(crs = 3832)
-
-# Flag whether the GPS record is valid or not
-hh_gps_sf <- hh_gps_sf %>%
-  mutate(
-    dist_to_office = as.numeric(st_distance(geometry, office_point)),
-    near_office    = dist_to_office < 200,
-    inside_ea      = lengths(st_within(geometry, layer_betio_ea_3832)) > 0,
-    gps_valid      = !near_office & inside_ea
-  )
-
-# Prepare a plain data frame of the flags
-gps_flags_df <- hh_gps_sf %>%
-  st_drop_geometry() %>%
-  transmute(record_id, gps_valid = as.logical(gps_valid))
-
-# Join back to household_data using record_id (IDEMPOTENT)
-household_data <- household_data %>%
-  # drop previously-derived cols to avoid .x/.y suffixing on re-runs
-  select(-any_of(c("gps_valid", "lat", "long", "coord_source"))) %>%
-  left_join(gps_flags_df, by = "record_id") %>%
-  mutate(
-    # ensure gps_valid exists even if hh_gps_sf had 0 rows
-    gps_valid = coalesce(gps_valid, FALSE),
-    
-    # coerce possible character exports to numeric
-    hh_latitude    = as.numeric(hh_latitude),
-    hh_longitude   = as.numeric(hh_longitude),
-    hh_census_lat  = as.numeric(hh_census_lat),
-    hh_census_long = as.numeric(hh_census_long),
-    
-    # prefer census coords; otherwise use gps only if valid
-    lat  = coalesce(hh_census_lat,  if_else(gps_valid, hh_latitude,  NA_real_)),
-    long = coalesce(hh_census_long, if_else(gps_valid, hh_longitude, NA_real_)),
-    
-    coord_source = case_when(
-      !is.na(hh_census_lat) & !is.na(hh_census_long) ~ "census",
-      gps_valid                                       ~ "gps",
-      TRUE                                            ~ "none"
-    )
-  )
-
-# ## Number active households with coords per EA (west to east) ----------------
-# 
-# household_data_all <- household_data_all %>%
-#   mutate(.row_id = row_number()) %>%
-#   group_by(hh_ea_id) %>%
-#   arrange(long, .by_group = TRUE) %>%
-#   mutate(
-#     .cond = hh_active & !is.na(long),
-#     .ord  = if_else(.cond, cumsum(.cond), NA_integer_),
-#     hh_ea_key = if_else(.cond, sprintf("%02d", .ord - 1L), NA_character_)
-#   ) %>%
-#   arrange(.row_id) %>%
-#   ungroup() %>%
-#   select(-.row_id, -.cond, -.ord)
-# 
-# # (Optional sanity check)
-# household_data_all %>% filter(hh_active, !is.na(long)) %>%
-#   count(hh_ea_id) %>% filter(n > 100) %>%
-#   { if(nrow(.)>0) warning("Some EAs have >100 active households (key space 00–99): ", paste(.$hh_ea_id, collapse=", ")) }
-# 
-# 
-## Create hh layer -----------------------------------------------------------------
-
-layer_hh_betio_3832 <- household_data %>%
-  filter(!is.na(lat) & !is.na(long)) %>%
-  st_as_sf(coords = c("long", "lat"), crs = 4326) %>%
-  st_transform(crs = st_crs(layer_betio_ea_3832))
-
-## Join clean coordinates to screening data for mapping --------------------------------------
-
-screening_data <- screening_data %>%
-  left_join(
-    household_data %>% select(record_id, lat, long, coord_source),
-    by = c("dwelling_id" = "record_id")
-  )
+  left_join(sx_ever_wide,             by = "record_id") %>%
+  left_join(sx_grp_any_ever_wide,     by = "record_id") %>%
+  left_join(sx_tp_any_true_wide,      by = "record_id") %>%
+  left_join(sx_any_ever_wide,         by = "record_id")
 
 
 # Metrics aggregated across time and geography --------------
@@ -681,8 +398,13 @@ screen_core_by_key <- function(df_keyed) {
     group_by(.key) %>%
     summarise(
       
+      # date first screening recorded
+      first_screen_date = suppressWarnings(min(en_date_visit, na.rm = TRUE)),
+      
       # activity
       reg        = n(),
+      reg_m      = sum(en_sex == "M", na.rm = TRUE),
+      reg_f      = sum(en_sex == "F", na.rm = TRUE),
       tst_placed = sum(tst_success == "Yes", na.rm = TRUE),
       tst_read   = sum(tst_read_bin,        na.rm = TRUE),
       cxr_elig   = sum(calc_xr_elig,        na.rm = TRUE),
@@ -811,7 +533,47 @@ tpt_cohort_by_key <- function(tpt_keyed) {
 hh_counts_by_key <- function(hh_keyed, require_reached = TRUE) {
   df <- if (require_reached) filter(hh_keyed, hh_reached) else hh_keyed
   df %>%
-    count(.key, name = "hh_enum")
+    count(.key, name = "hh_enum_new")
+}
+
+# HOUSEHOLDS: enumeration denominators by .key
+hh_denoms_by_key <- function(hh_keyed) {
+  hh_keyed %>%
+    group_by(.key) %>%
+    summarise(
+      pop_all_new      = sum(hh_all,       na.rm = TRUE),
+      pop_current_new  = sum(hh_size,      na.rm = TRUE),
+      pop_elig_new     = sum(hh_size_elig, na.rm = TRUE),
+      pop_reg_enum_new = sum(hh_reg,       na.rm = TRUE),
+      date_enum_new    = suppressWarnings(min(hh_date, na.rm = TRUE)),
+      .groups = "drop"
+    )
+}
+
+# EA-level census denominators: straight from ea_data
+census_denoms_ea <- function(ea_data) {
+  ea_data %>%
+    transmute(
+      .key            = record_id,
+      pop_2023_ex02,
+      pop_2023_m_ex02,
+      pop_2023_f_ex02,
+      hh_2023
+    )
+}
+
+# Village-level census denominators: sum over EAs within each village
+census_denoms_village <- function(ea_data) {
+  ea_data %>%
+    group_by(village) %>%
+    summarise(
+      pop_2023_ex02   = sum(pop_2023_ex02,   na.rm = TRUE),
+      pop_2023_m_ex02 = sum(pop_2023_m_ex02, na.rm = TRUE),
+      pop_2023_f_ex02 = sum(pop_2023_f_ex02, na.rm = TRUE),
+      hh_2023         = sum(hh_2023,         na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    rename(.key = village)
 }
 
 # Utility: zero-fill selected pure-count columns, keep % as NA
@@ -839,12 +601,12 @@ build_time_agg <- function(screening_data, household_data, treatment_data,
   
   # full sequence
   full_seq <- if (freq == "week") {
-    seq.Date(from = lubridate::floor_date(min_key, "week", week_start = week_start),
-             to   = lubridate::floor_date(max_key, "week", week_start = week_start),
+    seq.Date(from = floor_date(min_key, "week", week_start = week_start),
+             to   = floor_date(max_key, "week", week_start = week_start),
              by   = "week")
   } else {
-    seq.Date(from = lubridate::floor_date(min_key, "month"),
-             to   = lubridate::floor_date(max_key, "month"),
+    seq.Date(from = floor_date(min_key, "month"),
+             to   = floor_date(max_key, "month"),
              by   = "month")
   }
   
@@ -896,7 +658,7 @@ build_time_agg <- function(screening_data, household_data, treatment_data,
              ))
   
   hh_counts <- hh_counts_by_key(hh_keyed) %>%
-    complete(.key = full_seq, fill = list(hh_enum = 0))
+    complete(.key = full_seq, fill = list(hh_enum_new = 0))
   
   # Assemble
   out <- scr_core %>%
@@ -907,9 +669,9 @@ build_time_agg <- function(screening_data, household_data, treatment_data,
     left_join(tpt_rx,    by = ".key") %>%
     rename(period_start = .key) %>%
     zero_fill_counts(c(
-      "reg","tst_placed","tst_read","cxr_elig","cxr_done","cxr_result","tbdec","anyrx","xpert",
+      "reg","reg_m","reg_f","tst_placed","tst_read","cxr_elig","cxr_done","cxr_result","tbdec","anyrx","xpert",
       "hh_screened","ref_ntp","ref_nlp","ref_hbv",
-      "nlp_outcome_recorded","ntp_outcome_recorded","hh_enum",
+      "nlp_outcome_recorded","ntp_outcome_recorded","hh_enum_new",
       "tpt_start","tpt_completed","tpt_outcome_assigned",
       "tpt_1m_expected","tpt_1m_done","tpt_3m_expected","tpt_3m_done","tpt_4m_expected","tpt_4m_done",
       "tbdec_prestb","tbdec_ro","tbdec_unc","tbdec_missing",
@@ -925,7 +687,7 @@ build_time_agg <- function(screening_data, household_data, treatment_data,
     select(
       period_start,
       # phases: activity & treatment alongside %
-      reg, hh_screened,
+      reg, reg_m, reg_f, hh_screened,
       tpt_start, tpt_completed, tpt_outcome_assigned,
       tst_place_pct, tst_read_pct, tbdec_pct, anyrx_pct, xpert_pct, cxr_pct,
       cxr_res_pct, ntp_out_pct, nlp_out_pct, 
@@ -950,7 +712,7 @@ build_time_agg <- function(screening_data, household_data, treatment_data,
       ref_ntp, ref_nlp, ref_hbv,
       nlp_outcome_recorded, ntp_outcome_recorded,
       # households
-      hh_enum
+      hh_enum_new
     ) %>%
     pivot_longer(-period_start, names_to = "Indicator", values_to = "Value")
   
@@ -985,6 +747,8 @@ build_area_agg <- function(screening_data, household_data, treatment_data,
       filter(!is.na(tpt_ea_id), tpt_ea_id != "") %>%
       mutate(.key = tpt_ea_id)
     
+    den_census <- census_denoms_ea(ea_data)
+    
   } else { # village
     scr_keyed <- screening_data %>%
       filter(!is.na(village), village != "") %>%
@@ -999,6 +763,8 @@ build_area_agg <- function(screening_data, household_data, treatment_data,
       left_join(screening_data %>% select(record_id, village), by = "record_id") %>%
       filter(!is.na(village), village != "") %>%
       mutate(.key = village)
+    
+    den_census <- census_denoms_village(ea_data)
   }
   
   # Build via helpers
@@ -1008,9 +774,12 @@ build_area_agg <- function(screening_data, household_data, treatment_data,
   tpt_ax   <- tpt_assess_by_key(scr_keyed)
   tpt_rx   <- tpt_cohort_by_key(tpt_keyed)
   hh_counts<- hh_counts_by_key(hh_keyed)
+  hh_denoms <- hh_denoms_by_key(hh_keyed)
   
   # Assemble
-  out <- scr_core %>%
+  out <- den_census %>%
+    full_join(hh_denoms, by = ".key") %>%
+    full_join(scr_core,  by = ".key") %>%
     full_join(hh_counts, by = ".key") %>%
     full_join(tpt_ax,    by = ".key") %>%
     full_join(tb_dist,   by = ".key") %>%
@@ -1019,19 +788,61 @@ build_area_agg <- function(screening_data, household_data, treatment_data,
     arrange(.key) %>%
     rename(area = .key) %>%
     zero_fill_counts(c(
-      "hh_enum","reg","tst_placed","tst_read","cxr_elig","cxr_done","cxr_result","tbdec","anyrx","xpert",
+      # counts (screening)
+      "hh_enum_new","reg","reg_m","reg_f","tst_placed","tst_read","cxr_elig",
+      "cxr_done","cxr_result","tbdec","anyrx","xpert",
       "hh_screened","ref_ntp","ref_nlp","ref_hbv",
       "nlp_outcome_recorded","ntp_outcome_recorded",
+      # TPT cohorts / reviews
       "tpt_start","tpt_completed","tpt_outcome_assigned",
-      "tpt_1m_expected","tpt_1m_done","tpt_3m_expected","tpt_3m_done","tpt_4m_expected","tpt_4m_done",
+      "tpt_1m_expected","tpt_1m_done",
+      "tpt_3m_expected","tpt_3m_done",
+      "tpt_4m_expected","tpt_4m_done",
+      # TB / TST distributions
       "tbdec_prestb","tbdec_ro","tbdec_unc","tbdec_missing",
       "tst_neg","tst_pos","tst_missing",
+      # risk pathway
       "tptrf_assessed_n","tptrf_alt_needed_n","tptrf_alt_requested_n",
       "tptrf_alt_result_n","tptrf_risk_assigned_n","tptrf_as_expected_n"
-    ))
+    )) %>%
+    mutate(
+      
+      # Coverage indicators using new denominators
+      # Census-based denominators: pop_2023_ex02 excludes 0–2y as per protocol
+      
+      prop_reg_2023_ex02 = if_else(
+        !is.na(pop_2023_ex02) & pop_2023_ex02 > 0,
+        reg / pop_2023_ex02,
+        NA_real_
+      ),
+      prop_reg_enum_2023_ex02 = if_else(
+        !is.na(pop_2023_ex02) & pop_2023_ex02 > 0,
+        pop_reg_enum_new / pop_2023_ex02,
+        NA_real_
+      ),
+      
+      # Household-based denominators (eligibility from hh_size_elig)
+      prop_reg_enum_hh = if_else(
+        !is.na(pop_elig_new) & pop_elig_new > 0,
+        pop_reg_enum_new / pop_elig_new,
+        NA_real_
+      ),
+      prop_reg_screen_hh = if_else(
+        !is.na(pop_elig_new) & pop_elig_new > 0,
+        reg / pop_elig_new,
+        NA_real_
+      )
+    )
+  
+  # Long format
   
   out_long <- out %>%
-    pivot_longer(-area, names_to = "Indicator", values_to = "Value")
+    select(area, where(is.numeric)) %>%   # <-- drop dates, characters, etc
+    pivot_longer(
+      -area,
+      names_to  = "Indicator",
+      values_to = "Value"
+    )
   
   list(data = out, data_long = out_long, level = level)
 }
@@ -1051,12 +862,271 @@ monthly_data <- monthly$data
 monthly_data_na <- monthly$data_na
 monthly_long <- monthly$data_long
 
-# Build area aggregations
+# Build EA aggregations
 
 ea_agg      <- build_area_agg(screening_data, household_data, treatment_data, level = "ea")
 ea_agg_wide <- ea_agg$data
 ea_agg_long <- ea_agg$data_long
 
+# Columns in ea_agg_wide that are *not* the key or census 2023 fields
+ea_agg_cols <- setdiff(
+  names(ea_agg_wide),
+  c("area",               # key
+    "pop_2023_ex02",      # census ex 0–2
+    "pop_2023_m_ex02",
+    "pop_2023_f_ex02",
+    "hh_2023")
+)
+
+# Prepare agg data for join: drop overlapping census fields only
+ea_agg_join <- ea_agg_wide %>%
+  select(-any_of(c(
+    "pop_2023_ex02", "pop_2023_m_ex02",
+    "pop_2023_f_ex02", "hh_2023"
+  )))
+
+# Make ea_data idempotent: strip previous agg cols, then re-join fresh ones
+ea_data <- ea_data %>%
+  select(-any_of(ea_agg_cols)) %>%   # <- key step for idempotence
+  left_join(
+    ea_agg_join %>% rename(record_id = area),
+    by = "record_id"
+  )
+
+# Build village aggregations
+
 village_agg      <- build_area_agg(screening_data, household_data, treatment_data, level = "village")
 village_agg_wide <- village_agg$data
 village_agg_long <- village_agg$data_long
+
+# Rename as village_data
+
+village_data <- village_agg_wide %>%
+  rename(village = area)
+
+# --- Village ordering based on first_screen_date --------------------------
+
+village_order <- village_data %>%
+  arrange(first_screen_date) %>%
+  filter(!is.na(first_screen_date)) %>%
+  pull(village)
+
+village_data <- village_data %>%
+  mutate(village = factor(village, levels = village_order))
+
+## Cumulative village data (using 2023 ex 0–2 denominators) ----------------
+
+# Villages with total registrations >= 100 (canonical reg from agg)
+villages_gte_100 <- village_data %>%
+  filter(reg >= 100) %>%
+  pull(village) %>%
+  as.character()
+
+# Overall date range based on week_reg in screening_data
+week_range_complete <- seq.Date(
+  from = min(screening_data$week_reg, na.rm = TRUE),
+  to   = max(screening_data$week_reg, na.rm = TRUE),
+  by   = "week"
+)
+
+# Cumulative screened counts by village and week
+village_data_cum <- screening_data %>%
+  mutate(
+    village = if_else(
+      is.na(village) | village == "" | !(village %in% villages_gte_100),
+      "Other or unknown",
+      as.character(village)
+    )
+  ) %>%
+  filter(!is.na(week_reg)) %>%
+  group_by(village, week_reg) %>%
+  summarise(n_screened = n(), .groups = "drop") %>%
+  arrange(village, week_reg) %>%
+  complete(
+    village,
+    week_reg = week_range_complete,
+    fill = list(n_screened = 0)
+  ) %>%
+  group_by(village) %>%
+  mutate(cum_screened = cumsum(n_screened)) %>%
+  ungroup()
+
+# Join village_data for denominators and calculate cumulative proportions
+# Using 2023 ex 0–2 pop as the main denominator
+
+village_data_cum <- village_data_cum %>%
+  left_join(village_data, by = "village") %>%
+  mutate(
+    # 2023 ex-0–2 census denominator
+    pop_2023_ex02 = ifelse(is.na(pop_2023_ex02) | pop_2023_ex02 == 0, NA, pop_2023_ex02),
+    cum_prop_2023_ex02 = ifelse(
+      is.na(pop_2023_ex02),
+      NA,
+      cum_screened / pop_2023_ex02
+    ),
+    
+    # Programme eligible denominator from HH aggregation
+    pop_elig_new = ifelse(is.na(pop_elig_new) | pop_elig_new == 0, NA, pop_elig_new),
+    cum_prop_elig_new = ifelse(
+      is.na(pop_elig_new),
+      NA,
+      cum_screened / pop_elig_new
+    )
+  )
+
+# Determine first week each village was reached
+village_order_cum <- village_data_cum %>%
+  filter(cum_screened > 0) %>%
+  group_by(village) %>%
+  summarise(first_week = min(week_reg, na.rm = TRUE), .groups = "drop") %>%
+  arrange(first_week) %>%
+  pull(village)
+
+# Ensure 'Other or unknown' is always the first level
+village_order_cum <- c(setdiff(village_order_cum, "Other or unknown"),
+                       "Other or unknown")
+
+village_data_cum <- village_data_cum %>%
+  mutate(village = factor(village, levels = village_order_cum))
+
+# GIS data tidy ----------------------------------------------------------------------
+
+## Join EA data to EA layer -------------------------------------------------------
+
+# Ensure both columns have the same type for joining
+layer_ki_ea_3832$ea_2020 <- as.character(layer_ki_ea_3832$ea_2020)
+ea_data$record_id <- as.character(ea_data$record_id)
+
+# Remove previously joined columns, then join
+layer_ki_ea_3832 <- layer_ki_ea_3832 %>%
+  select(-all_of(grep("^joined_", names(.), value = TRUE))) %>%  # Remove previous joins
+  left_join(ea_data, by = c("ea_2020" = "record_id")) %>%  # Perform join
+  rename_with(~ paste0("joined_", .), .cols = any_of(setdiff(names(ea_data), "record_id")))  # Rename only newly added columns
+
+# Filter to only include EAs with vid of 716
+layer_betio_ea_3832 <- layer_ki_ea_3832 %>%
+  filter(vid == 716)
+
+## Clean household coordinates -------------------------------------------------
+
+# Define office location as sf point (in EPSG:4326 first)
+office_point <- st_sfc(
+  st_point(c(172.943185325, 1.352152047)),
+  crs = 4326
+) %>% st_transform(crs = 3832)
+
+# Create spatial object of GPS coordinates only
+hh_gps_sf <- household_data %>%
+  mutate(
+    gps_lat  = as.numeric(hh_latitude),
+    gps_long = as.numeric(hh_longitude)
+  ) %>%
+  filter(!is.na(gps_lat), !is.na(gps_long)) %>%
+  st_as_sf(coords = c("gps_long", "gps_lat"), crs = 4326) %>%
+  st_transform(crs = 3832)
+
+# Flag whether the GPS record is valid or not
+hh_gps_sf <- hh_gps_sf %>%
+  mutate(
+    dist_to_office = as.numeric(st_distance(geometry, office_point)),
+    near_office    = dist_to_office < 200,
+    inside_ea      = lengths(st_within(geometry, layer_betio_ea_3832)) > 0,
+    gps_valid      = !near_office & inside_ea
+  )
+
+# Prepare a plain data frame of the flags
+gps_flags_df <- hh_gps_sf %>%
+  st_drop_geometry() %>%
+  transmute(record_id, gps_valid = as.logical(gps_valid))
+
+# Join back to household_data using record_id (IDEMPOTENT)
+household_data <- household_data %>%
+  # drop previously-derived cols to avoid .x/.y suffixing on re-runs
+  select(-any_of(c("gps_valid", "lat", "long", "coord_source"))) %>%
+  left_join(gps_flags_df, by = "record_id") %>%
+  mutate(
+    # ensure gps_valid exists even if hh_gps_sf had 0 rows
+    gps_valid = coalesce(gps_valid, FALSE),
+    
+    # coerce possible character exports to numeric
+    hh_latitude    = as.numeric(hh_latitude),
+    hh_longitude   = as.numeric(hh_longitude),
+    hh_census_lat  = as.numeric(hh_census_lat),
+    hh_census_long = as.numeric(hh_census_long),
+    
+    # prefer census coords; otherwise use gps only if valid
+    lat  = coalesce(hh_census_lat,  if_else(gps_valid, hh_latitude,  NA_real_)),
+    long = coalesce(hh_census_long, if_else(gps_valid, hh_longitude, NA_real_)),
+    
+    coord_source = case_when(
+      !is.na(hh_census_lat) & !is.na(hh_census_long) ~ "census",
+      gps_valid                                       ~ "gps",
+      TRUE                                            ~ "none"
+    )
+  )
+
+# ## Number active households with coords per EA (west to east) ----------------
+# 
+# household_data_all <- household_data_all %>%
+#   mutate(.row_id = row_number()) %>%
+#   group_by(hh_ea_id) %>%
+#   arrange(long, .by_group = TRUE) %>%
+#   mutate(
+#     .cond = hh_active & !is.na(long),
+#     .ord  = if_else(.cond, cumsum(.cond), NA_integer_),
+#     hh_ea_key = if_else(.cond, sprintf("%02d", .ord - 1L), NA_character_)
+#   ) %>%
+#   arrange(.row_id) %>%
+#   ungroup() %>%
+#   select(-.row_id, -.cond, -.ord)
+# 
+# # (Optional sanity check)
+# household_data_all %>% filter(hh_active, !is.na(long)) %>%
+#   count(hh_ea_id) %>% filter(n > 100) %>%
+#   { if(nrow(.)>0) warning("Some EAs have >100 active households (key space 00–99): ", paste(.$hh_ea_id, collapse=", ")) }
+# 
+# 
+## Create hh layer -----------------------------------------------------------------
+
+layer_hh_betio_3832 <- household_data %>%
+  filter(!is.na(lat) & !is.na(long)) %>%
+  st_as_sf(coords = c("long", "lat"), crs = 4326) %>%
+  st_transform(crs = st_crs(layer_betio_ea_3832))
+
+## Join clean coordinates to screening data for mapping --------------------------------------
+
+screening_data <- screening_data %>%
+  select(-any_of(c("lat", "long", "coord_source"))) %>%
+  left_join(
+    household_data %>% select(record_id, lat, long, coord_source),
+    by = c("dwelling_id" = "record_id")
+  )
+
+
+
+
+# Retain only the useful data objects ---------------------------------
+
+# keep_objects <- c(
+#   # core data
+#   "ea_data",
+#   "household_data",
+#   "screening_data",
+#   "treatment_data",
+#   "village_data",
+# 
+#   # GIS
+#   "gis_layers", "layer_ki_ea", "layer_ki_ea_3832",
+#   "layer_betio_ea_3832", "layer_hh_betio_3832",
+# 
+#   # village / EA summaries
+#   "ea_agg_long",
+#   "village_agg_long",
+#   "village_data_cum",
+#   
+#   # time series
+#   "weekly_data", "weekly_data_na", "weekly_long",
+#   "monthly_data", "monthly_data_na", "monthly_long"
+# )
+# 
+# rm(list = setdiff(ls(), keep_objects))

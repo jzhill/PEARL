@@ -3,7 +3,7 @@ library(lubridate)
 library(ggplot2)
 
 # Define min and max axis ranges
-plot_05.05_maxy <- 16000
+plot_05.05_maxy <- 20000
 
 # Create the cumulative stacked area plot (y-axis = cumulative count).
 plot_05.05 <- ggplot(village_data_cum, aes(x = week_reg, y = cum_screened, fill = village)) +

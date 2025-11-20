@@ -3,8 +3,8 @@ library(dplyr)
 library(here)
 
 plot_05.01 <- ggplot(weekly_data, aes(x = period_start)) +
-  geom_line(aes(y = hh_enum,   color = "Households Enumerated"), size = 0.8) +
-  geom_point(aes(y = hh_enum,  color = "Households Enumerated"), size = 1.5, na.rm = TRUE) +
+  geom_line(aes(y = hh_enum_new,   color = "Households Enumerated"), size = 0.8) +
+  geom_point(aes(y = hh_enum_new,  color = "Households Enumerated"), size = 1.5, na.rm = TRUE) +
   geom_line(aes(y = reg,       color = "People Registered"),     size = 0.8) +
   geom_point(aes(y = reg,      color = "People Registered"),     size = 1.5, na.rm = TRUE) +
   geom_line(aes(y = tpt_start, color = "People Started on TPT"), size = 0.8) +

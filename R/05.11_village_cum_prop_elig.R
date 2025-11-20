@@ -8,16 +8,16 @@ library(ggplot2)
 # Include only villages with >= 100 people registered
 village_data_cum_gte_100 <- village_data_cum %>%
   filter(village %in% villages_gte_100) %>%
-  select(-date_started) %>% 
-  left_join(village_data %>% select(village, date_started), by = "village") %>%
-  filter(week_reg >= date_started)  # Remove points before village started
+  select(-first_screen_date) %>%
+  left_join(village_data %>% select(village, first_screen_date), by = "village") %>%
+  filter(week_reg >= first_screen_date)  # Remove points before village started
 
 # Define min and max date range for x-axis
 min_date <- floor_date(min(village_data_cum_gte_100$week_reg, na.rm = TRUE), unit = "month") - months(1)
 max_date <- floor_date(max(village_data_cum_gte_100$week_reg, na.rm = TRUE), unit = "month") + months(1)
 
 # Plot cumulative proportion by week on a single panel
-plot_05.11 <- ggplot(village_data_cum_gte_100, aes(x = week_reg, y = cum_prop_elig, color = village)) + # cum_prop_elig on this line
+plot_05.11 <- ggplot(village_data_cum_gte_100, aes(x = week_reg, y = cum_prop_elig_new, color = village)) + # cum_prop_elig_new on this line
   geom_line(size = 1) +
   geom_point(size = 2) +
   labs(x = "Registration Week",

@@ -10,8 +10,8 @@ wd <- weekly_data %>% filter(period_start == max_week)
 
 # Build "This Week" values from the latest weekly row
 this_week <- list(
-  "Households Enumerated" = wd$hh_enum,
-  "Households Reached"    = wd$households_reached,
+  "Households Enumerated" = wd$hh_enum_new,
+  "Households Screened"   = wd$hh_screened,
   "People Registered"     = wd$reg,
   "TSTs Completed"        = wd$tst_read,
   "Referred to NTP"       = wd$ref_ntp,
@@ -28,8 +28,8 @@ this_week <- list(
 
 # Build "Total Count" values from the raw datasets (preserving old semantics)
 total_counts <- list(
-  "Households Enumerated" = nrow(household_data),
-  "Households Reached"    = screening_data %>% distinct(dwelling_name) %>% nrow(),
+  "Households Enumerated" = household_data %>% filter(hh_reached) %>% nrow(),
+  "Households Screened"   = screening_data %>% distinct(dwelling_name) %>% nrow(),
   "People Registered"     = nrow(screening_data),
   "TSTs Completed"        = sum(screening_data$tst_read_bin, na.rm = TRUE),
   "Referred to NTP"       = sum(screening_data$referred_ntp, na.rm = TRUE),
