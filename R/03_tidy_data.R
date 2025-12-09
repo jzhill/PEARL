@@ -50,8 +50,22 @@ ntp_outcome_values <- c("Confirmed","Ruled out","Currently on TB treatment")
 
 screening_data <- screening_data %>%
   mutate(
+    
+    # TST placed (Yes = TRUE; all other values OR NA = FALSE)
+    tst_placed_bin = case_when(
+      tst_success == "Yes" ~ TRUE,
+      TRUE                 ~ FALSE
+    ),
+    
     # TST read done
     tst_read_bin = !is.na(tst_read_mm) | !is.na(tst_read_positive),
+    
+    # TST ≥10 mm: TRUE/FALSE, but NA if no reading
+    tst_10mm_bin = case_when(
+      is.na(tst_read_mm)    ~ NA,           # no reading
+      tst_read_mm >= 10     ~ TRUE,
+      tst_read_mm < 10      ~ FALSE
+    ),
     
     # TB decision recorded (any value present)
     tbdec_bin = !is.na(tb_decision),
@@ -73,6 +87,75 @@ screening_data <- screening_data %>%
       (ntp_diagnosis %in% ntp_outcome_values | !is.na(exit_reason_screen))
   )
 
+# Xpert availability flag ----------------------------------------------
+
+screening_data <- screening_data %>%
+  mutate(
+    xpert_available = case_when(
+      # Missing visit date → keep as NA
+      is.na(en_date_visit) ~ NA, 
+      
+      # Windows when Xpert was NOT available
+      en_date_visit >= as.Date("2023-04-17") & en_date_visit <= as.Date("2023-04-30") ~ FALSE,
+      en_date_visit >= as.Date("2023-06-26") & en_date_visit <= as.Date("2023-08-06") ~ FALSE,
+      en_date_visit >= as.Date("2023-08-14") & en_date_visit <= as.Date("2023-08-20") ~ FALSE,
+      en_date_visit >= as.Date("2024-10-21") & en_date_visit <= as.Date("2024-12-15") ~ FALSE,
+      en_date_visit >= as.Date("2025-01-20") & en_date_visit <= as.Date("2025-02-09") ~ FALSE,
+      en_date_visit >= as.Date("2025-04-14") & en_date_visit <= as.Date("2025-07-20") ~ FALSE,
+      en_date_visit >= as.Date("2025-07-28") & en_date_visit <= as.Date("2025-11-30") ~ FALSE,
+      
+      # All other dates → Xpert available
+      TRUE ~ TRUE
+    )
+  )
+
+# TB clinical / infectiousness flags -----------------------------------------
+
+screening_data <- screening_data %>%
+  mutate(
+    # Confirmed TB flag (helper)
+    tb_confirmed = ntp_diagnosis == "Confirmed",
+    
+    # Clinical vs subclinical among confirmed TB
+    # TRUE  = clinical (symptomatic)
+    # FALSE = subclinical (asymptomatic)
+    # NA    = not confirmed TB or missing sx summary
+    tb_clinical_bin = case_when(
+      tb_confirmed & calc_sx == "Sx Positive" ~ TRUE,
+      tb_confirmed & calc_sx == "Sx Negative" ~ FALSE,
+      tb_confirmed                            ~ NA,   # confirmed but sx summary missing/other
+      TRUE                                    ~ NA    # not confirmed TB
+    ),
+    
+    # Xpert positive (excluding trace) – helper
+    xpert_pos_ex_trace = spuxpt_mtb_res_lab == "Detected" &
+      spuxpt_lab_det_level %in% c("High", "Medium", "Low", "Very low"),
+    
+    # New TB case – helper:
+    #   - confirmed TB
+    #   - no previous TB recorded
+    #   - no previous register number recorded
+    new_tb_case = case_when(
+      tb_confirmed & prev_tb == FALSE & is.na(ntp_prev_reg) ~ TRUE,
+      tb_confirmed                                         ~ FALSE,
+      TRUE                                                 ~ FALSE
+    ),
+    
+    # XR consistent with TB – helper
+    xr_consistent_tb = calc_xr == "1 cw TB",
+    
+    # More vs less infectious among confirmed TB:
+    # TRUE  = Xpert pos (excl trace) OR (new case AND XR cw TB)
+    # FALSE = other confirmed TB
+    # NA    = not confirmed TB
+    tb_moreinf_bin = case_when(
+      tb_confirmed & (xpert_pos_ex_trace | (new_tb_case & xr_consistent_tb)) ~ TRUE,
+      tb_confirmed                                                           ~ FALSE,
+      TRUE                                                                   ~ NA
+    )
+  )
+
+
 # Age category in 10 year groups -------------------------------
 
 screening_data <- screening_data %>%
@@ -80,6 +163,46 @@ screening_data <- screening_data %>%
 
 treatment_data <- treatment_data %>%
   mutate(age_cat = age_categories(tpt_age, by = 10, upper = 80))
+
+# Age categories for modelling ------------------------------------------------
+
+screening_data <- screening_data %>%
+  mutate(
+    age_cat_model = case_when(
+      is.na(en_cal_age)                 ~ NA_character_,
+      en_cal_age >=   0 & en_cal_age <=  2 ~ "0-2",
+      en_cal_age >=   3 & en_cal_age <=  9 ~ "3-9",
+      en_cal_age >=  10 & en_cal_age <= 14 ~ "10-14",
+      en_cal_age >=  15 & en_cal_age <= 64 ~ "15-64",
+      en_cal_age >=  65                  ~ "65+",
+      TRUE ~ NA_character_
+    ),
+    age_cat_model = factor(
+      age_cat_model,
+      levels = c("0-2", "3-9", "10-14", "15-64", "65+"),
+      ordered = TRUE
+    )
+  )
+
+treatment_data <- treatment_data %>%
+  mutate(
+    age_cat_model = case_when(
+      is.na(tpt_age)                   ~ NA_character_,
+      tpt_age >=   0 & tpt_age <=  2 ~ "0-2",
+      tpt_age >=   3 & tpt_age <=  9 ~ "3-9",
+      tpt_age >=  10 & tpt_age <= 14 ~ "10-14",
+      tpt_age >=  15 & tpt_age <= 64 ~ "15-64",
+      tpt_age >=  65                ~ "65+",
+      TRUE ~ NA_character_
+    ),
+    age_cat_model = factor(
+      age_cat_model,
+      levels = c("0-2", "3-9", "10-14", "15-64", "65+"),
+      ordered = TRUE
+    )
+  )
+ 
+
 
 # Weeks for all dates ---------------------------------
 # Use this for all future weekly data analysis
@@ -1065,27 +1188,6 @@ household_data <- household_data %>%
     )
   )
 
-# ## Number active households with coords per EA (west to east) ----------------
-# 
-# household_data_all <- household_data_all %>%
-#   mutate(.row_id = row_number()) %>%
-#   group_by(hh_ea_id) %>%
-#   arrange(long, .by_group = TRUE) %>%
-#   mutate(
-#     .cond = hh_active & !is.na(long),
-#     .ord  = if_else(.cond, cumsum(.cond), NA_integer_),
-#     hh_ea_key = if_else(.cond, sprintf("%02d", .ord - 1L), NA_character_)
-#   ) %>%
-#   arrange(.row_id) %>%
-#   ungroup() %>%
-#   select(-.row_id, -.cond, -.ord)
-# 
-# # (Optional sanity check)
-# household_data_all %>% filter(hh_active, !is.na(long)) %>%
-#   count(hh_ea_id) %>% filter(n > 100) %>%
-#   { if(nrow(.)>0) warning("Some EAs have >100 active households (key space 00–99): ", paste(.$hh_ea_id, collapse=", ")) }
-# 
-# 
 ## Create hh layer -----------------------------------------------------------------
 
 layer_hh_betio_3832 <- household_data %>%
@@ -1102,31 +1204,3 @@ screening_data <- screening_data %>%
     by = c("dwelling_id" = "record_id")
   )
 
-
-
-
-# Retain only the useful data objects ---------------------------------
-
-# keep_objects <- c(
-#   # core data
-#   "ea_data",
-#   "household_data",
-#   "screening_data",
-#   "treatment_data",
-#   "village_data",
-# 
-#   # GIS
-#   "gis_layers", "layer_ki_ea", "layer_ki_ea_3832",
-#   "layer_betio_ea_3832", "layer_hh_betio_3832",
-# 
-#   # village / EA summaries
-#   "ea_agg_long",
-#   "village_agg_long",
-#   "village_data_cum",
-#   
-#   # time series
-#   "weekly_data", "weekly_data_na", "weekly_long",
-#   "monthly_data", "monthly_data_na", "monthly_long"
-# )
-# 
-# rm(list = setdiff(ls(), keep_objects))
