@@ -10,6 +10,7 @@
 # Packages -----------------------------------------
 
 library(here)
+library(glue)
 library(stringr)
 library(lubridate)
 library(tidyverse)
@@ -17,6 +18,7 @@ library(epikit)
 library(dplyr)
 library(purrr)
 library(sf)
+library(qs)
 
 # Parameters ----------------------------------------
 
@@ -1203,4 +1205,49 @@ screening_data <- screening_data %>%
     household_data %>% select(record_id, lat, long, coord_source),
     by = c("dwelling_id" = "record_id")
   )
+
+# Persist a versioned analysis bundle for downstream scripts -----------------
+
+# Data bundle paths ---------------------------------------------------------
+
+# Use a dated bundle plus a rolling "latest" pointer so downstream scripts
+# (and Quarto) can load a consistent tidy dataset without re-running 01_/02_/03_.
+tidy_bundle_dir <- here("data-processed")
+dir.create(tidy_bundle_dir, recursive = TRUE, showWarnings = FALSE)
+
+analysis_data <- list(
+  screening_data   = screening_data,
+  household_data   = household_data,
+  treatment_data   = treatment_data,
+  ea_data          = ea_data,
+  weekly_data      = weekly_data,
+  weekly_data_na   = weekly_data_na,
+  weekly_long      = weekly_long,
+  monthly_data     = monthly_data,
+  monthly_data_na  = monthly_data_na,
+  monthly_long     = monthly_long,
+  ea_agg_wide      = ea_agg_wide,
+  ea_agg_long      = ea_agg_long,
+  village_agg_wide = village_agg_wide,
+  village_agg_long = village_agg_long,
+  village_data     = village_data,
+  village_data_cum = village_data_cum,
+  village_order_cum = village_order_cum,
+  layer_ki_ea_3832   = layer_ki_ea_3832,
+  layer_betio_ea_3832 = layer_betio_ea_3832,
+  layer_hh_betio_3832 = layer_hh_betio_3832,
+  min_week = min_week,
+  max_week = max_week,
+  min_month = min_month,
+  max_month = max_month,
+  current_date = current_date
+)
+
+tidy_data_path <- file.path(tidy_bundle_dir, glue::glue("tidy_data_{current_date}.qs"))
+tidy_data_latest_path <- file.path(tidy_bundle_dir, "tidy_data_latest.qs")
+
+qs::qsave(analysis_data, tidy_data_path)
+qs::qsave(analysis_data, tidy_data_latest_path)
+
+message("Saved tidy data bundle to ", tidy_data_path)
 
