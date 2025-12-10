@@ -652,17 +652,17 @@ gis_layers <- load_gis_if_present(gis_paths)
 layer_ki_ea       <- if (!is.null(gis_layers)) gis_layers$layer_4326 else NULL
 layer_ki_ea_3832  <- if (!is.null(gis_layers)) gis_layers$layer_3832 else NULL
 
-# ---- Return named list of data objects for later use ----------------------
-
-invisible(list(
-  screening_data = screening_data,
-  household_data = household_data,
-  treatment_data = treatment_data,
-  ea_data        = ea_data,
-  screening_dd   = screening_dd,
-  household_dd   = household_dd,
-  treatment_dd   = treatment_dd,
-  ea_dd          = ea_dd,
-  layer_ki_ea    = layer_ki_ea,
-  layer_ki_ea_3832 = layer_ki_ea_3832
-))
+# # ---- Return named list of data objects for later use ----------------------
+# 
+# invisible(list(
+#   screening_data = screening_data,
+#   household_data = household_data,
+#   treatment_data = treatment_data,
+#   ea_data        = ea_data,
+#   screening_dd   = screening_dd,
+#   household_dd   = household_dd,
+#   treatment_dd   = treatment_dd,
+#   ea_dd          = ea_dd,
+#   layer_ki_ea    = layer_ki_ea,
+#   layer_ki_ea_3832 = layer_ki_ea_3832
+# ))
