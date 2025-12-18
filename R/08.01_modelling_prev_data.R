@@ -2,12 +2,14 @@ library(tidyverse)
 library(openxlsx)
 library(here)
 
+age_cat_levels <- c("0-2", "3-9", "10-14", "15-64", "65+", "Missing", "All ages")
+
 # Age × Xpert availability table -----------------------------
 
 # Base: by xpert_group and age_cat_model
 tbl_xpert_age_base <- screening_data %>%
-  filter(!is.na(age_cat_model)) %>%
   mutate(
+    age_cat_model = fct_explicit_na(age_cat_model, na_level = "Missing"),
     xpert_group = if_else(
       xpert_available,
       "Xpert available",
@@ -76,14 +78,15 @@ tbl_xpert_age <- bind_rows(
     xpert_group = factor(
       xpert_group,
       levels = c("Xpert available", "Xpert not available", "All")
-    )
+    ),
+    age_cat_model = factor(age_cat_model, levels = age_cat_levels, ordered = TRUE)
   ) %>%
   arrange(xpert_group, age_cat_model)
 
 # Age × TST table -------------------------------------
 
 tbl_tst_age <- screening_data %>%
-  filter(!is.na(age_cat_model)) %>%
+  mutate(age_cat_model = fct_explicit_na(age_cat_model, na_level = "Missing")) %>%
   group_by(age_cat_model) %>%
   summarise(
     n_screened   = n(),
@@ -93,7 +96,7 @@ tbl_tst_age <- screening_data %>%
     .groups = "drop"
   )
 
-# ---- Add All ages row ----
+# Add All ages row
 tbl_tst_all <- tbl_tst_age %>%
   summarise(
     age_cat_model = "All ages",
@@ -109,7 +112,8 @@ tbl_tst_age <- bind_rows(tbl_tst_age, tbl_tst_all) %>%
       n_tst_read > 0,
       n_tst_10mm / n_tst_read,
       NA_real_
-    )
+    ),
+    age_cat_model = factor(age_cat_model, levels = age_cat_levels, ordered = TRUE)
   ) %>%
   arrange(age_cat_model)
 
@@ -148,7 +152,7 @@ tb_alloc_wide <- tb_alloc_base %>%
                             levels = c("Less infectious", "More infectious", "Unknown"))
   ) %>%
   arrange(clinical_cat, infectious_cat) %>%
-  tidyr::pivot_wider(
+  pivot_wider(
     names_from  = infectious_cat,
     values_from = n,
     values_fill = 0
@@ -156,16 +160,196 @@ tb_alloc_wide <- tb_alloc_base %>%
 
 # Add row totals
 tb_alloc_wide <- tb_alloc_wide %>%
-  mutate(Row_total = rowSums(dplyr::across(where(is.numeric))))
+  mutate(Row_total = rowSums(across(where(is.numeric))))
 
 # Add column totals (including row_total)
 tb_alloc_totals <- tb_alloc_wide %>%
   summarise(
     clinical_cat = "All",
-    dplyr::across(where(is.numeric), sum)
+    across(where(is.numeric), sum)
   )
 
-tb_alloc_wide <- bind_rows(tb_alloc_wide, tb_alloc_totals)
+tb_alloc_wide <- bind_rows(tb_alloc_wide, tb_alloc_totals) %>%
+  mutate(
+    clinical_cat = factor(clinical_cat, levels = c("Subclinical", "Clinical", "Unknown", "All"))
+  ) %>%
+  arrange(clinical_cat)
+
+# Algorithm sensitivity tables ------------------------
+
+# (overall + 4 TB subtypes)
+# Denominator: confirmed TB cases screened when Xpert available
+# CIs: exact binomial (binom.test)
+
+# Denominator cohort (gold-standard opportunity)
+
+tb_cases <- screening_data %>%
+  filter(
+    xpert_available == TRUE,
+    ntp_diagnosis == "Confirmed"
+  ) %>%
+  mutate(
+    # Hypothetical algorithms (treat missing as NOT positive)
+    alg_symptoms_only = coalesce(calc_sx == "Sx Positive", FALSE),
+    alg_symptoms_or_cxr = coalesce(calc_sx == "Sx Positive", FALSE) |
+      coalesce(calc_xr == "1 cw TB", FALSE),
+    alg_pearl = TRUE
+  )
+
+# Overall sensitivity table (all confirmed TB in Xpert-available periods)
+
+sens_overall <- tb_cases %>%
+  transmute(
+    stratum = "All confirmed TB (Xpert available)",
+    alg_symptoms_only,
+    alg_symptoms_or_cxr,
+    alg_pearl
+  ) %>%
+  pivot_longer(
+    cols = starts_with("alg_"),
+    names_to = "algorithm",
+    values_to = "screen_positive"
+  ) %>%
+  group_by(stratum, algorithm) %>%
+  summarise(
+    denominator = n(),
+    numerator = sum(screen_positive, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# Clinical/subclinical only sensitivity table (ignore infectiousness)
+
+sens_clinical <- tb_cases %>%
+  filter(!is.na(tb_clinical_bin)) %>%
+  mutate(
+    stratum = if_else(tb_clinical_bin, "Clinical", "Subclinical")
+  ) %>%
+  transmute(
+    stratum,
+    alg_symptoms_only,
+    alg_symptoms_or_cxr,
+    alg_pearl
+  ) %>%
+  pivot_longer(
+    cols = starts_with("alg_"),
+    names_to = "algorithm",
+    values_to = "screen_positive"
+  ) %>%
+  group_by(stratum, algorithm) %>%
+  summarise(
+    denominator = n(),
+    numerator = sum(screen_positive, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# More/less infectious only sensitivity table (ignore clinical status)
+
+sens_infectious <- tb_cases %>%
+  filter(!is.na(tb_moreinf_bin)) %>%
+  mutate(
+    stratum = if_else(tb_moreinf_bin, "More infectious", "Less infectious")
+  ) %>%
+  transmute(
+    stratum,
+    alg_symptoms_only,
+    alg_symptoms_or_cxr,
+    alg_pearl
+  ) %>%
+  pivot_longer(
+    cols = starts_with("alg_"),
+    names_to = "algorithm",
+    values_to = "screen_positive"
+  ) %>%
+  group_by(stratum, algorithm) %>%
+  summarise(
+    denominator = n(),
+    numerator = sum(screen_positive, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# Subtype sensitivity table (4 subtypes only: exclude missing subtype flags)
+
+sens_subtypes <- tb_cases %>%
+  filter(!is.na(tb_clinical_bin), !is.na(tb_moreinf_bin)) %>%
+  mutate(
+    stratum = paste0(
+      if_else(tb_clinical_bin, "Clinical", "Subclinical"),
+      " + ",
+      if_else(tb_moreinf_bin, "More infectious", "Less infectious")
+    )
+  ) %>%
+  transmute(
+    stratum,
+    alg_symptoms_only,
+    alg_symptoms_or_cxr,
+    alg_pearl
+  ) %>%
+  pivot_longer(
+    cols = starts_with("alg_"),
+    names_to = "algorithm",
+    values_to = "screen_positive"
+  ) %>%
+  group_by(stratum, algorithm) %>%
+  summarise(
+    denominator = n(),
+    numerator = sum(screen_positive, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# Combine + label algorithms + compute sensitivity + exact binomial CI
+
+sens_long <- bind_rows(
+  sens_overall,
+  sens_clinical,
+  sens_infectious,
+  sens_subtypes
+) %>%
+  mutate(
+    algorithm = recode(
+      algorithm,
+      "alg_symptoms_only"   = "Symptoms only",
+      "alg_symptoms_or_cxr" = "Symptoms OR CXR (cw TB)",
+      "alg_pearl"           = "PEARL algorithm (Symptoms + CXR + Xpert)"
+    ),
+    algorithm = factor(
+      algorithm,
+      levels = c(
+        "Symptoms only",
+        "Symptoms OR CXR (cw TB)",
+        "PEARL algorithm (Symptoms + CXR + Xpert)"
+      )
+    ),
+    stratum = factor(
+      stratum,
+      levels = c(
+        "All confirmed TB (Xpert available)",
+        "Clinical",
+        "Subclinical",
+        "More infectious",
+        "Less infectious",
+        "Subclinical + Less infectious",
+        "Subclinical + More infectious",
+        "Clinical + Less infectious",
+        "Clinical + More infectious"
+      )
+    )
+  ) %>%
+  arrange(stratum, algorithm) %>%
+  mutate(
+    sensitivity = if_else(denominator > 0, numerator / denominator, NA_real_)
+  ) %>%
+  rowwise() %>%
+  mutate(
+    ci = list(
+      if (is.na(denominator) || denominator == 0) c(NA_real_, NA_real_)
+      else stats::binom.test(numerator, denominator)$conf.int
+    ),
+    ci_low  = ci[[1]],
+    ci_high = ci[[2]]
+  ) %>%
+  ungroup() %>%
+  select(algorithm, stratum, numerator, denominator, sensitivity, ci_low, ci_high)
+
 
 # Write Excel file -----------------------------------
 
@@ -187,6 +371,9 @@ writeData(wb, "TST_by_age", tbl_tst_age)
 
 addWorksheet(wb, "TB_clinical_infectious")
 writeData(wb, "TB_clinical_infectious", tb_alloc_wide)
+
+addWorksheet(wb, "Algorithm_sensitivity")
+writeData(wb, "Algorithm_sensitivity", sens_long)
 
 saveWorkbook(wb, output_path, overwrite = TRUE)
 

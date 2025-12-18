@@ -17,7 +17,7 @@ library(epikit)
 library(dplyr)
 library(purrr)
 library(sf)
-library
+library(qs)
 
 # Parameters ----------------------------------------
 

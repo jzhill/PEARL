@@ -1,5 +1,7 @@
 library(dplyr)
 library(flextable)
+library(officer)
+library(here)
 
 # Define positive and valid Xpert results
 xpert_any <- c("Not detected", "Trace detected", "Detected")
