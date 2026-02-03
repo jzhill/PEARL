@@ -1,4 +1,4 @@
-# PEARL - Testing - again
+# PEARL
 
 Repo for the PEARL project
 
