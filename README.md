@@ -1,4 +1,4 @@
-# PEARL
+# PEARL - Testing
 
 Repo for the PEARL project
 
