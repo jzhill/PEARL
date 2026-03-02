@@ -1,0 +1,68 @@
+---
+title: "PEARL+ Weekly Team Review"
+subtitle: "Operational Performance & Quality Dashboard"
+date: today
+format: 
+  docx:
+    toc: false
+    number-sections: false
+    highlight-style: github
+    reference-doc: landscape_reference.docx
+execute: 
+  echo: false
+  warning: false
+  message: false
+---
+
+# Setup {visibility="hidden"}
+
+```{r}
+#| label: setup
+
+library(here)
+library(tidyverse)
+library(flextable)
+
+# Source functions and load latest data bundle
+source(here::here("R", "05_output_functions.R"))
+load_latest_tidy_data()
+```
+
+## Project Overview: Core Indicators (Last 12 Weeks)
+
+```{r}
+#| label: project-core-table
+
+out_tab_project_weekly_review(core_only = TRUE)
+```
+
+{{< pagebreak >}}
+
+## Project Overview: Weekly Quality Trends
+
+```{r}
+#| label: project-quality-plot
+#| fig-width: 9
+#| fig-height: 6
+#| fig-align: center
+
+out_plot_weekly_quality()
+```
+
+{{< pagebreak >}}
+
+## Team Performance: Core Indicators (Current Week)
+
+```{r}
+#| label: team-core-table
+out_tab_team_weekly_review(period = "current", core_only = TRUE)
+```
+
+{{< pagebreak >}}
+
+## Team Feedback & Action Items
+
+-   **Data Quality:** \[Add manual notes here before the meeting, or discuss live\]
+-   **Operational Bottlenecks:** \[E.g., Xpert machine status, vehicle access\]
+-   **Focus for Next Week:**
+    -   \[E.g., Prioritizing follow-up on expected 3-month reviews\]

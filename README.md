@@ -173,6 +173,28 @@ Additional scripts for operational and support procedures are labelled starting 
 
 Any write function will require a confirmation by the user.
 
-## Data analysis and outputs
+## 05 Data analysis and outputs
 
-Scripts prefixed "05\_", "06\_", "07\_" are for specific types of figure, plot, tables, dashboards and so on - code can be incorporated into reports as needed.
+The analysis pipeline has been migrated from individual scripts to a centralized, functional library. This means that all the output plots, figures and tables are created as functions that can be reused and adapted.
+
+The script named 05_output_functions.R contains the core library of functions used to generate all PEARL+ outputs.
+
+-   **Standardized Styling**: Implements `theme_pearl()` to ensure consistent formatting across all tables (grey headers, solid white backgrounds, and uniform borders).
+
+-   **Dual-Export**: Functions are designed to be compatible with both PNG and DOCX formats.
+
+-   **Optimized Layouts**: Includes specific width and orientation settings for wide clinical tables to ensure they display correctly on landscape Word pages.
+
+The script named 05_run_outputs.R is a convenient implementation script that executes the functional library to generate, verify, and export all outputs.
+
+-   **Automated Unpacking**: Loads the latest `.qs` tidy data bundle directly into the global environment.
+
+-   **Directory Management**: Automatically creates a dated output folder with categorized sub-directories (**01_Participation** through **07_Modelling**).
+
+-   **Dual-Export Logic**: Uses a helper function to save every table as both a high-resolution PNG for dashboards and a formatted DOCX for reports.
+
+## 06 Modeling and Dashboards
+
+-   **06.01_modelling_inputs.R**: Generates cleaned data exports specifically formatted for external modeling requirements.
+
+-   **07_dashboards**: Shiny dashboard components and consolidated report generation scripts.
