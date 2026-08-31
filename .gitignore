@@ -4,7 +4,7 @@
 
 # Session Data files
 .RData
-.RDataTmp
+.RDataTmp*
 
 # User-specific files
 .Ruserdata
@@ -20,6 +20,9 @@
 
 # RStudio files
 .Rproj.user/
+
+# Positron IDE folder
+.posit/
 
 # produced vignettes
 vignettes/*.html

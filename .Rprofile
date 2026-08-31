@@ -1,23 +1,29 @@
-.First <- function() {
-  dir.create(paste0(getwd(), "/data-processed"), showWarnings = F)
-  dir.create(paste0(getwd(), "/data-raw"), showWarnings = F)
-  dir.create(paste0(getwd(), "/data-raw/dds"), showWarnings = F)
-  dir.create(paste0(getwd(), "/data-raw/ea"), showWarnings = F)
-  dir.create(paste0(getwd(), "/data-raw/gis"), showWarnings = F)
-  dir.create(paste0(getwd(), "/data-raw/household"), showWarnings = F)
-  dir.create(paste0(getwd(), "/data-raw/screening"), showWarnings = F)
-  dir.create(paste0(getwd(), "/data-raw/treatment"), showWarnings = F)
-  dir.create(paste0(getwd(), "/figures"), showWarnings = F)
-  dir.create(paste0(getwd(), "/ea_maps"), showWarnings = F)
-  dir.create(paste0(getwd(), "/Quarto"), showWarnings = F)
-  dir.create(paste0(getwd(), "/R"), showWarnings = F)
-  dir.create(paste0(getwd(), "/reports"), showWarnings = F)
-  
-  if (!("renv" %in% list.files())) {
-    renv::init()
-  } else {
-    source("renv/activate.R")
-  }
-  
-  cat("\nWelcome to your R-Project:", basename(getwd()), "\n")
+# Create directory structure (base R only - nothing loaded yet)
+dirs <- c(
+  "data-processed",
+  "data-raw",
+  "data-raw/dds",
+  "data-raw/ea",
+  "data-raw/gis",
+  "data-raw/household",
+  "data-raw/screening",
+  "data-raw/treatment",
+  "figures",
+  "ea_maps",
+  "Quarto",
+  "R",
+  "reports"
+)
+
+lapply(dirs, function(d) {
+  dir.create(file.path(getwd(), d), showWarnings = FALSE, recursive = TRUE)
+})
+
+# Bootstrap and load renv
+if (!file.exists("renv/activate.R")) {
+  renv::init()
+} else {
+  source("renv/activate.R")
 }
+
+cat("\nWelcome to", basename(getwd()), "\n")
