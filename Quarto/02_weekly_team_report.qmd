@@ -33,7 +33,7 @@ load_latest_tidy_data()
 ```{r}
 #| label: project-core-table
 
-out_tab_project_weekly_review(core_only = TRUE)
+out_tab_project_weekly_review(core_only = TRUE, table_width = 10)
 ```
 
 {{< pagebreak >}}
