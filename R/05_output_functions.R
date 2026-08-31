@@ -26,6 +26,72 @@ library(openxlsx)
 # 4. NO NAMESPACES: Avoid using package::function notation. If a conflict is suspected
 #    or anticipated, notify the user and provide options.
 
+# --- TODO: CODE QUALITY BACKLOG (documentation only; no logic changed here) -----
+# Findings from a code-quality review, queued for a future editing session.
+# Nothing below has been fixed yet - annotations only.
+#
+# 1. SCALING PARAMETERS (Rule 1 above is not yet consistently applied):
+#    - Missing 'base_size' (plots hardcode font/theme sizes instead):
+#      out_plot_age_pyramid, out_plot_betio_coverage_map, out_plot_betio_household_points,
+#      out_plot_betio_screening_map, out_plot_ea_coverage, out_plot_lep_yield_demographics,
+#      out_plot_monthly_quality_indicators, out_plot_tb_outcome_proportions_6m,
+#      out_plot_tb_yield_demographics, out_plot_tpt_age_pyramid, out_plot_tpt_assessment_gaps,
+#      out_plot_tpt_cascade, out_plot_tpt_followup_monthly, out_plot_tpt_ineligibility_reasons,
+#      out_plot_tpt_outcome_proportions, out_plot_tpt_retention_step, out_plot_tpt_risk_cascade,
+#      out_plot_tpt_symptoms_demographics, out_plot_treatment_proportions_monthly,
+#      out_plot_tst_positivity_by_age, out_plot_tst_proportions_6m, out_plot_tst_thresholds_age,
+#      out_plot_tst_yield_demographics, out_plot_village_cumulative_coverage,
+#      out_plot_village_cumulative_eligible_coverage, out_plot_village_cumulative_screening,
+#      out_plot_weekly_activity
+#      (out_plot_weekly_quality already complies - use it as the template)
+#    - Missing 'font_size'/'table_width' (flextable functions hardcode sizes instead):
+#      out_tab_activity_summary, out_tab_ae_type_summary, out_tab_lep_referral_outcomes,
+#      out_tab_lep_yield_demographics_table, out_tab_scabies_prevalence_demographics,
+#      out_tab_sputum_cascade, out_tab_tb_referral_outcomes, out_tab_tb_yield_demographics_table,
+#      out_tab_tb_yield_efficiency, out_tab_tpt_demographics_count, out_tab_tpt_discontinued_ae_profile,
+#      out_tab_tpt_initiation_by_risk, out_tab_tpt_monitoring_summary, out_tab_tpt_outcomes_by_symptoms,
+#      out_tab_tpt_outcomes_monthly, out_tab_tpt_symptoms_count, out_tab_tpt_symptoms_detail,
+#      out_tab_treatment_proportions_monthly, out_tab_tst_yield_demographics_table
+#      (out_tab_modelling_inputs_xlsx is exempt - it exports xlsx, not a flextable)
+#    - out_tab_geo_indicators has 'font_size' but no 'table_width'.
+#    - Already-compliant functions to use as reference: out_plot_weekly_quality,
+#      out_tab_team_weekly_review, out_tab_project_weekly_review, out_tab_lep_annual,
+#      out_tab_lep_village.
+#
+# 2. DEFENSIVE HANDLING OF EMPTY / ZERO-ROW INPUT:
+#    Only 3 of the ~50 output functions guard against an empty/zero-row result before
+#    plotting or building a flextable: out_plot_tpt_ineligibility_reasons,
+#    out_plot_tpt_assessment_gaps, out_tab_team_weekly_review (see their nrow(...) == 0
+#    checks for the pattern). Every other function assumes the incoming data has rows,
+#    which matters if these are reused on filtered subsets in ad hoc Quarto reports
+#    (e.g. one small EA, or a short date window) rather than the full weekly run.
+#
+# 3. INCONSISTENT TIME-WINDOW PARAMETER CONVENTIONS:
+#    Different functions name "how much history to show" differently:
+#      - start_date/end_date:             out_plot_weekly_quality, out_tab_project_weekly_review
+#      - start_year/end_year:             out_tab_lep_annual, out_tab_lep_village
+#      - weeks_lookback:                  out_plot_tpt_cascade
+#      - weeks_lag:                       out_tab_tpt_outcomes_monthly, out_tab_tpt_outcomes_by_symptoms
+#      - target_week (point, not range):  out_tab_activity_summary, out_tab_team_weekly_review
+#    And two functions hardcode a 6-month lookback with no parameter at all:
+#      out_plot_tb_outcome_proportions_6m, out_plot_tst_proportions_6m (literal months(6)).
+#    Don't unify without agreeing a single house convention first.
+#
+# 4. VIRIDIS COLOR-SCALE INCONSISTENCY:
+#    Most charts use scale_fill/color_viridis_d(option = "F", begin = 0.2, end = 0.8).
+#    Deviations that may or may not be intentional:
+#      - out_plot_age_pyramid:             begin = 0.4, end = 0.6
+#      - out_plot_tpt_age_pyramid:         begin = 0.4, end = 0.7
+#      - out_plot_betio_household_points:  option = "D" (different palette), no begin/end
+#      - out_plot_tpt_outcome_proportions: direction = -1, no begin/end
+#      - out_plot_tpt_assessment_gaps, out_plot_tpt_cascade, out_plot_tpt_ineligibility_reasons,
+#        out_plot_tpt_risk_cascade: bare scale_fill_viridis_d() (full 0-1 range, default option)
+#
+# 5. MINOR DEAD CODE: two commented-out lines inside
+#    out_plot_village_cumulative_eligible_coverage() (search "first_screen_date" join) look
+#    superseded by the join already present in village_data_cum; flagged inline there too.
+# ----------------------------------------------------------------------------------
+
 # --- DATA INFRASTRUCTURE ------------------------------------------------------
 
 #' Internal helper to apply the PEARL standardized styling to flextables
@@ -1022,6 +1088,9 @@ out_plot_village_cumulative_eligible_coverage <- function(
   plot_data <- data %>%
     filter(village_gte_100 %in% active_villages) %>%
     # Ensure we use the most reliable first_screen_date by joining from v_data
+    # TODO: these two lines look dead - village_data_cum already carries
+    # first_screen_date via its own join, so this select/left_join appears superseded.
+    # Leaving as-is (commented) pending confirmation before deleting.
     #    select(-any_of("first_screen_date")) %>%
     #    left_join(v_data %>% select(village, first_screen_date), by = "village") %>%
     filter(week_reg >= first_screen_date)
