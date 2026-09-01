@@ -55,7 +55,7 @@ library(openxlsx)
 #      (out_tab_modelling_inputs_xlsx is exempt - it exports xlsx, not a flextable)
 #    - out_tab_geo_indicators has 'font_size' but no 'table_width'.
 #    - Already-compliant functions to use as reference: out_plot_weekly_quality,
-#      out_tab_team_weekly_review, out_tab_project_weekly_review, out_tab_lep_annual,
+#      out_tab_team_weekly_review, out_tab_project_weekly_review, out_tab_lep_ind_time,
 #      out_tab_lep_village.
 #
 # 2. DEFENSIVE HANDLING OF EMPTY / ZERO-ROW INPUT:
@@ -68,8 +68,13 @@ library(openxlsx)
 #
 # 3. INCONSISTENT TIME-WINDOW PARAMETER CONVENTIONS:
 #    Different functions name "how much history to show" differently:
-#      - start_date/end_date:             out_plot_weekly_quality, out_tab_project_weekly_review
-#      - start_year/end_year:             out_tab_lep_annual, out_tab_lep_village
+#      - start_date/end_date + interval:  out_tab_lep_ind_time, out_plot_treatment_proportions_time,
+#                                          out_tab_treatment_proportions_time (2026-09: preferred house
+#                                          convention going forward - start_date/end_date filter the
+#                                          raw dates directly, interval = c("year","quarter","month")
+#                                          controls bucketing/labels. Not yet retrofitted elsewhere.)
+#      - start_date/end_date (no interval): out_plot_weekly_quality, out_tab_project_weekly_review
+#      - start_year/end_year:             out_tab_lep_village
 #      - weeks_lookback:                  out_plot_tpt_cascade
 #      - weeks_lag:                       out_tab_tpt_outcomes_monthly, out_tab_tpt_outcomes_by_symptoms
 #      - target_week (point, not range):  out_tab_activity_summary, out_tab_team_weekly_review
@@ -109,6 +114,7 @@ theme_pearl <- function(x) {
     border_outer(border = fp_border(color = "black", width = 1.2)) %>%
     set_table_properties(align = "center", layout = "fixed")
 }
+
 
 #' Load and unpack the most recent tidy data file
 #' @param path String. Path to the folder containing .qs files
@@ -864,7 +870,7 @@ out_plot_monthly_quality_indicators <- function(data = monthly_long) {
 }
 
 
-# --- DEMOGRAPHIC PLOTS --------------------------------------------------------
+# --- DEMOGRAPHICS ------------------------------------------------------------
 
 #' Plot age pyramid of PEARL participants
 #' @param data Dataframe. Defaults to screening_data from the environment
@@ -887,7 +893,7 @@ out_plot_age_pyramid <- function(data = screening_data) {
 }
 
 
-# --- GEOGRAPHIC COVERAGE AND SCREENING PLOTS -----------------------------
+# --- GEOGRAPHIC COVERAGE AND SCREENING ---------------------------------------
 
 #' Plot registration coverage by Enumeration Area (EA)
 #' @param data Dataframe. Defaults to ea_data from the environment
@@ -1171,7 +1177,9 @@ out_plot_betio_household_points <- function(
 # using a satellite tileset (via a package like ggspatial) can significantly
 # improve the map's utility for staff.
 
-# --- SCREENING OUTCOME OUTPUTS ----------------------------------------------
+# --- TB SCREENING OUTCOMES (TB, TST, SPUTUM) ---------------------------------
+
+## Plots -------------------------------------
 
 #' Plot weekly proportion of TB outcomes for the last 6 months
 #' @param data Dataframe. Defaults to screening_data from the environment
@@ -1342,305 +1350,6 @@ out_plot_tb_yield_demographics <- function(data = screening_data) {
 }
 
 
-#' Plot Leprosy screening outcomes (presumptive and confirmed) by age and sex
-#' @param data Dataframe. Defaults to screening_data from the environment
-out_plot_lep_yield_demographics <- function(data = screening_data) {
-  # 1. Data Preparation: Use vectorized mean for prevalence
-  # We filter for those with a valid leprosy referral decision (TRUE/FALSE)
-  lep_plot_df <- data %>%
-    filter(!is.na(age_cat), en_sex %in% c("M", "F"), !is.na(lep_refer)) %>%
-    group_by(age_cat, en_sex) %>%
-    summarise(
-      `Screened Positive` = mean(lep_refer == TRUE, na.rm = TRUE),
-      `Confirmed Leprosy` = mean(nlp_diagnosis == "Confirmed", na.rm = TRUE),
-      .groups = "drop"
-    ) %>%
-    pivot_longer(
-      cols = c(`Screened Positive`, `Confirmed Leprosy`),
-      names_to = "metric",
-      values_to = "proportion"
-    ) %>%
-    mutate(
-      metric = factor(
-        metric,
-        levels = c("Screened Positive", "Confirmed Leprosy")
-      ),
-      en_sex = factor(
-        en_sex,
-        levels = c("F", "M"),
-        labels = c("Female", "Male")
-      )
-    )
-
-  # 2. Dynamic Headroom Calculation
-  # For Leprosy, we use a tighter rounding (to the nearest 5%)
-  y_max <- suppressWarnings(max(lep_plot_df$proportion, na.rm = TRUE))
-  y_cap <- if (is.finite(y_max)) ceiling(y_max * 20) / 20 else 0.2
-  y_cap <- max(y_cap, 0.05)
-
-  # 3. Construct Output
-  ggplot(lep_plot_df, aes(x = age_cat, y = proportion, fill = en_sex)) +
-    geom_col(
-      position = position_dodge(width = 0.7),
-      width = 0.65,
-      na.rm = TRUE
-    ) +
-    # CHANGE: Set scales to "free_y"
-    facet_wrap(~metric, nrow = 1, scales = "free_y") +
-    scale_y_continuous(
-      # REMOVED: limits = c(0, y_cap)
-      labels = percent_format(accuracy = 1),
-      expand = expansion(mult = c(0, 0.15))
-    ) +
-    scale_fill_viridis_d(option = "F", begin = 0.2, end = 0.8) +
-    labs(
-      title = "Leprosy screening outcomes by age group and sex",
-      subtitle = "Denominator: Individuals with a recorded leprosy referral decision",
-      x = "Age group",
-      y = "Prevalence (%)",
-      fill = "Sex"
-    ) +
-    theme_light() +
-    theme(
-      plot.title = element_text(size = 11, face = "bold"),
-      axis.title = element_text(size = 10),
-      axis.text = element_text(size = 9),
-      legend.title = element_blank(),
-      legend.position = "bottom",
-      strip.text = element_text(size = 10, face = "bold"),
-      axis.text.x = element_text(angle = 45, hjust = 1)
-    )
-}
-
-
-#' Generate a flextable of Scabies prevalence by age group and sex
-#' @param data Dataframe. Defaults to screening_data from the environment
-out_tab_scabies_prevalence_demographics <- function(data = screening_data) {
-  scabies_data <- data %>%
-    filter(!is.na(lep_scabies), en_sex %in% c("M", "F")) %>%
-    mutate(age_cat = fct_explicit_na(factor(age_cat), na_level = "Missing"))
-  scabies_wide <- scabies_data %>%
-    group_by(age_cat, en_sex) %>%
-    summarise(
-      prop = round(mean(lep_scabies == TRUE, na.rm = TRUE) * 100, 1),
-      .groups = "drop"
-    ) %>%
-    pivot_wider(names_from = en_sex, values_from = prop)
-  scabies_by_age <- scabies_data %>%
-    group_by(age_cat) %>%
-    summarise(
-      Overall = round(mean(lep_scabies == TRUE, na.rm = TRUE) * 100, 1),
-      .groups = "drop"
-    )
-  scabies_by_sex <- scabies_data %>%
-    group_by(en_sex) %>%
-    summarise(
-      prop = round(mean(lep_scabies == TRUE, na.rm = TRUE) * 100, 1),
-      .groups = "drop"
-    )
-  grand_total <- round(
-    mean(scabies_data$lep_scabies == TRUE, na.rm = TRUE) * 100,
-    1
-  )
-
-  scabies_final <- scabies_wide %>%
-    left_join(scabies_by_age, by = "age_cat") %>%
-    arrange(age_cat) %>%
-    bind_rows(tibble(
-      age_cat = "Overall",
-      M = scabies_by_sex$prop[scabies_by_sex$en_sex == "M"],
-      F = scabies_by_sex$prop[scabies_by_sex$en_sex == "F"],
-      Overall = grand_total
-    ))
-
-  ft <- scabies_final %>%
-    flextable() %>%
-    set_header_labels(
-      age_cat = "Age Category",
-      M = "Male (%)",
-      F = "Female (%)",
-      Overall = "Total (%)"
-    ) %>%
-    add_header_lines(
-      values = "Table: Scabies Prevalence by Age Group and Sex (Evaluable Participants)"
-    ) %>%
-    theme_pearl() %>%
-    bold(i = nrow(scabies_final), part = "body") %>%
-    bold(j = "Overall", part = "all") %>%
-    width(j = 1, width = 1.8) %>%
-    autofit()
-
-  return(ft)
-}
-
-
-#' Generate a detailed flextable of TST positivity by age and sex (Landscape Optimized)
-#' @param data Dataframe. Defaults to screening_data from the environment
-out_tab_tst_yield_demographics_table <- function(data = screening_data) {
-  tst_summary_wide <- data %>%
-    filter(!is.na(age_cat), en_sex %in% c("M", "F"), !is.na(tst_read_bin)) %>%
-    mutate(
-      tst_positive = tst_read_positive == "Positive TST",
-      valid_tst = tst_read_bin == TRUE
-    ) %>%
-    group_by(age_cat, en_sex) %>%
-    summarise(
-      positive_n = sum(tst_positive & valid_tst, na.rm = TRUE),
-      valid_n = sum(valid_tst, na.rm = TRUE),
-      .groups = "drop"
-    ) %>%
-    mutate(percent_positive = round(100 * positive_n / valid_n, 1)) %>%
-    pivot_wider(
-      names_from = en_sex,
-      values_from = c(positive_n, percent_positive, valid_n),
-      names_glue = "{en_sex}_{.value}"
-    ) %>%
-    arrange(age_cat)
-
-  col_keys <- c(
-    "age_cat",
-    "M_positive_n",
-    "M_percent_positive",
-    "M_valid_n",
-    "F_positive_n",
-    "F_percent_positive",
-    "F_valid_n"
-  )
-  header_labels <- c(
-    age_cat = "Age Group",
-    M_positive_n = "n",
-    M_percent_positive = "%",
-    M_valid_n = "Valid N",
-    F_positive_n = "n",
-    F_percent_positive = "%",
-    F_valid_n = "Valid N"
-  )
-
-  ft <- flextable(tst_summary_wide, col_keys = col_keys) %>%
-    set_header_labels(values = header_labels) %>%
-    add_header_row(
-      values = c(
-        "Age Group",
-        "Positive TST",
-        "Positive TST",
-        "Total Evaluated",
-        "Positive TST",
-        "Positive TST",
-        "Total Evaluated"
-      ),
-      colwidths = c(1, 1, 1, 1, 1, 1, 1)
-    ) %>%
-    add_header_row(
-      values = c("Age Group", "Male", "Female"),
-      colwidths = c(1, 3, 3)
-    ) %>%
-    add_header_lines(
-      values = "Table: TST Positivity Prevalence by Age and Sex"
-    ) %>%
-    theme_pearl() %>%
-    merge_v(part = "header") %>%
-    # Landscape optimization
-    width(j = 1, width = 1.2) %>%
-    width(j = -1, width = 1.2) %>%
-    set_table_properties(layout = "fixed")
-
-  return(ft)
-}
-
-
-#' Generate a detailed flextable of Leprosy yield (Presumptive & Confirmed) by age and sex (Landscape Optimized)
-#' @param data Dataframe. Defaults to screening_data from the environment
-out_tab_lep_yield_demographics_table <- function(data = screening_data) {
-  lep_summary_wide <- data %>%
-    filter(!is.na(age_cat), en_sex %in% c("M", "F"), !is.na(lep_refer)) %>%
-    mutate(
-      presumptive_lep = lep_refer == TRUE,
-      confirmed_lep = nlp_diagnosis == "Confirmed",
-      valid_lep = !is.na(lep_refer)
-    ) %>%
-    group_by(age_cat, en_sex) %>%
-    summarise(
-      presumptive_n = sum(presumptive_lep, na.rm = TRUE),
-      confirmed_n = sum(confirmed_lep, na.rm = TRUE),
-      valid_n = sum(valid_lep, na.rm = TRUE),
-      .groups = "drop"
-    ) %>%
-    mutate(
-      percent_presumptive = round(100 * presumptive_n / valid_n, 1),
-      percent_confirmed = round(100 * confirmed_n / valid_n, 1)
-    ) %>%
-    pivot_wider(
-      names_from = en_sex,
-      values_from = c(
-        presumptive_n,
-        confirmed_n,
-        valid_n,
-        percent_presumptive,
-        percent_confirmed
-      ),
-      names_glue = "{en_sex}_{.value}"
-    ) %>%
-    arrange(age_cat)
-
-  col_keys <- c(
-    "age_cat",
-    "M_presumptive_n",
-    "M_percent_presumptive",
-    "M_confirmed_n",
-    "M_percent_confirmed",
-    "M_valid_n",
-    "F_presumptive_n",
-    "F_percent_presumptive",
-    "F_confirmed_n",
-    "F_percent_confirmed",
-    "F_valid_n"
-  )
-  header_labels <- c(
-    age_cat = "Age Group",
-    M_presumptive_n = "n",
-    M_percent_positive = "%",
-    M_confirmed_n = "n",
-    M_percent_confirmed = "%",
-    M_valid_n = "N",
-    F_presumptive_n = "n",
-    F_percent_presumptive = "%",
-    F_confirmed_n = "n",
-    F_percent_confirmed = "%",
-    F_valid_n = "N"
-  )
-
-  ft <- flextable(lep_summary_wide, col_keys = col_keys) %>%
-    set_header_labels(values = header_labels) %>%
-    add_header_row(
-      values = c(
-        "Age Group",
-        "Presumptive",
-        "Confirmed",
-        "Total",
-        "Presumptive",
-        "Confirmed",
-        "Total"
-      ),
-      colwidths = c(1, 2, 2, 1, 2, 2, 1)
-    ) %>%
-    add_header_row(
-      values = c("Age Group", "Male", "Female"),
-      colwidths = c(1, 5, 5)
-    ) %>%
-    add_header_lines(
-      values = "Table: Leprosy Screening Yield (Presumptive & Confirmed) by Age and Sex"
-    ) %>%
-    theme_pearl() %>%
-    merge_v(part = "header") %>%
-    # Landscape optimization
-    width(j = 1, width = 1.2) %>%
-    width(j = -1, width = 0.75) %>%
-    set_table_properties(layout = "fixed")
-
-  return(ft)
-}
-
-
 #' Plot TST positivity prevalence by age category
 #' @param data Dataframe. Defaults to screening_data from the environment
 out_plot_tst_positivity_by_age <- function(data = screening_data) {
@@ -1804,6 +1513,82 @@ out_plot_tst_yield_demographics <- function(data = screening_data) {
 }
 
 
+## Tables -------------------------------------
+
+#' Generate a detailed flextable of TST positivity by age and sex (Landscape Optimized)
+#' @param data Dataframe. Defaults to screening_data from the environment
+out_tab_tst_yield_demographics_table <- function(data = screening_data) {
+  tst_summary_wide <- data %>%
+    filter(!is.na(age_cat), en_sex %in% c("M", "F"), !is.na(tst_read_bin)) %>%
+    mutate(
+      tst_positive = tst_read_positive == "Positive TST",
+      valid_tst = tst_read_bin == TRUE
+    ) %>%
+    group_by(age_cat, en_sex) %>%
+    summarise(
+      positive_n = sum(tst_positive & valid_tst, na.rm = TRUE),
+      valid_n = sum(valid_tst, na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    mutate(percent_positive = round(100 * positive_n / valid_n, 1)) %>%
+    pivot_wider(
+      names_from = en_sex,
+      values_from = c(positive_n, percent_positive, valid_n),
+      names_glue = "{en_sex}_{.value}"
+    ) %>%
+    arrange(age_cat)
+
+  col_keys <- c(
+    "age_cat",
+    "M_positive_n",
+    "M_percent_positive",
+    "M_valid_n",
+    "F_positive_n",
+    "F_percent_positive",
+    "F_valid_n"
+  )
+  header_labels <- c(
+    age_cat = "Age Group",
+    M_positive_n = "n",
+    M_percent_positive = "%",
+    M_valid_n = "Valid N",
+    F_positive_n = "n",
+    F_percent_positive = "%",
+    F_valid_n = "Valid N"
+  )
+
+  ft <- flextable(tst_summary_wide, col_keys = col_keys) %>%
+    set_header_labels(values = header_labels) %>%
+    add_header_row(
+      values = c(
+        "Age Group",
+        "Positive TST",
+        "Positive TST",
+        "Total Evaluated",
+        "Positive TST",
+        "Positive TST",
+        "Total Evaluated"
+      ),
+      colwidths = c(1, 1, 1, 1, 1, 1, 1)
+    ) %>%
+    add_header_row(
+      values = c("Age Group", "Male", "Female"),
+      colwidths = c(1, 3, 3)
+    ) %>%
+    add_header_lines(
+      values = "Table: TST Positivity Prevalence by Age and Sex"
+    ) %>%
+    theme_pearl() %>%
+    merge_v(part = "header") %>%
+    # Landscape optimization
+    width(j = 1, width = 1.2) %>%
+    width(j = -1, width = 1.2) %>%
+    set_table_properties(layout = "fixed")
+
+  return(ft)
+}
+
+
 #' Generate a flextable of the Sputum and GeneXpert diagnostic cascade
 #' @param data Dataframe. Defaults to screening_data from the environment
 out_tab_sputum_cascade <- function(data = screening_data) {
@@ -1856,79 +1641,6 @@ out_tab_sputum_cascade <- function(data = screening_data) {
     bold(i = total_indices, part = "body") %>%
     width(j = 1, width = 1.5) %>%
     autofit()
-
-  return(ft)
-}
-
-
-#' Generate a flextable of quarterly Leprosy referral outcomes
-#' @param data Dataframe. Defaults to screening_data from the environment
-out_tab_lep_referral_outcomes <- function(data = screening_data) {
-  lep_ref_raw <- data %>%
-    filter(lep_refer == TRUE) %>%
-    mutate(
-      quarter_start = floor_date(en_date_visit, "quarter"),
-      quarter = paste0(year(quarter_start), " Q", quarter(quarter_start)),
-      nlp_diagnosis = fct_explicit_na(
-        factor(nlp_diagnosis),
-        na_level = "Missing"
-      )
-    )
-  if (nrow(lep_ref_raw) > 0) {
-    quarter_seq <- seq.Date(
-      from = min(lep_ref_raw$quarter_start, na.rm = TRUE),
-      to = floor_date(Sys.Date(), "quarter"),
-      by = "3 months"
-    )
-    quarter_labels <- paste0(year(quarter_seq), " Q", quarter(quarter_seq))
-  } else {
-    quarter_labels <- character(0)
-  }
-
-  lep_ref_counts <- lep_ref_raw %>%
-    count(quarter, nlp_diagnosis) %>%
-    complete(
-      quarter = factor(quarter_labels, levels = quarter_labels, ordered = TRUE),
-      nlp_diagnosis,
-      fill = list(n = 0)
-    ) %>%
-    pivot_wider(
-      names_from = nlp_diagnosis,
-      values_from = n,
-      values_fill = 0
-    ) %>%
-    arrange(quarter)
-  lep_ref_counts <- lep_ref_counts %>%
-    mutate(Total = rowSums(select(., -quarter)))
-  total_row <- lep_ref_counts %>%
-    summarise(across(where(is.numeric), sum)) %>%
-    mutate(quarter = "Total")
-  lep_ref_counts_final <- bind_rows(lep_ref_counts, total_row)
-
-  lep_ref_props <- lep_ref_counts_final %>%
-    mutate(across(
-      -c(quarter, Total),
-      ~ round(.x / ifelse(Total == 0, 1, Total) * 100, 1)
-    ))
-  lep_ref_final_table <- lep_ref_counts_final %>%
-    mutate(across(
-      -c(quarter, Total),
-      ~ paste0(.x, " (", lep_ref_props[[cur_column()]], "%)")
-    ))
-
-  latest_q <- if (length(quarter_labels) > 0) max(quarter_labels) else "N/A"
-
-  ft <- lep_ref_final_table %>%
-    flextable() %>%
-    add_header_row(
-      values = paste("Table: Leprosy Referral Outcomes up to", latest_q),
-      colwidths = ncol(lep_ref_final_table)
-    ) %>%
-    theme_pearl() %>%
-    bold(i = nrow(lep_ref_final_table), part = "body") %>%
-    width(j = 1, width = 1.5) %>%
-    width(j = -1, width = 1.6) %>% # j = -1 applies to all other columns
-    set_table_properties(layout = "fixed")
 
   return(ft)
 }
@@ -2198,6 +1910,339 @@ out_tab_tb_yield_demographics_table <- function(data = screening_data) {
 }
 
 
+# --- LEPROSY AND PREVENTION SCREENING OUTCOMES -------------------------------
+
+## Plots -------------------------------------
+
+#' Plot Leprosy screening outcomes (presumptive and confirmed) by age and sex
+#' @param data Dataframe. Defaults to screening_data from the environment
+out_plot_lep_yield_demographics <- function(data = screening_data) {
+  # 1. Data Preparation: Use vectorized mean for prevalence
+  # We filter for those with a valid leprosy referral decision (TRUE/FALSE)
+  lep_plot_df <- data %>%
+    filter(!is.na(age_cat), en_sex %in% c("M", "F"), !is.na(lep_refer)) %>%
+    group_by(age_cat, en_sex) %>%
+    summarise(
+      `Screened Positive` = mean(lep_refer == TRUE, na.rm = TRUE),
+      `Confirmed Leprosy` = mean(nlp_diagnosis == "Confirmed", na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    pivot_longer(
+      cols = c(`Screened Positive`, `Confirmed Leprosy`),
+      names_to = "metric",
+      values_to = "proportion"
+    ) %>%
+    mutate(
+      metric = factor(
+        metric,
+        levels = c("Screened Positive", "Confirmed Leprosy")
+      ),
+      en_sex = factor(
+        en_sex,
+        levels = c("F", "M"),
+        labels = c("Female", "Male")
+      )
+    )
+
+  # 2. Dynamic Headroom Calculation
+  # For Leprosy, we use a tighter rounding (to the nearest 5%)
+  y_max <- suppressWarnings(max(lep_plot_df$proportion, na.rm = TRUE))
+  y_cap <- if (is.finite(y_max)) ceiling(y_max * 20) / 20 else 0.2
+  y_cap <- max(y_cap, 0.05)
+
+  # 3. Construct Output
+  ggplot(lep_plot_df, aes(x = age_cat, y = proportion, fill = en_sex)) +
+    geom_col(
+      position = position_dodge(width = 0.7),
+      width = 0.65,
+      na.rm = TRUE
+    ) +
+    # CHANGE: Set scales to "free_y"
+    facet_wrap(~metric, nrow = 1, scales = "free_y") +
+    scale_y_continuous(
+      # REMOVED: limits = c(0, y_cap)
+      labels = percent_format(accuracy = 1),
+      expand = expansion(mult = c(0, 0.15))
+    ) +
+    scale_fill_viridis_d(option = "F", begin = 0.2, end = 0.8) +
+    labs(
+      title = "Leprosy screening outcomes by age group and sex",
+      subtitle = "Denominator: Individuals with a recorded leprosy referral decision",
+      x = "Age group",
+      y = "Prevalence (%)",
+      fill = "Sex"
+    ) +
+    theme_light() +
+    theme(
+      plot.title = element_text(size = 11, face = "bold"),
+      axis.title = element_text(size = 10),
+      axis.text = element_text(size = 9),
+      legend.title = element_blank(),
+      legend.position = "bottom",
+      strip.text = element_text(size = 10, face = "bold"),
+      axis.text.x = element_text(angle = 45, hjust = 1)
+    )
+}
+
+
+#' Plot treatment proportions from screening activity over a chosen time interval
+#'
+#' @param data Dataframe. Defaults to screening_data from the environment.
+#' @param start_date Date. Optional; filters data from this date (inclusive). Defaults to the earliest en_date_visit.
+#' @param end_date Date. Optional; filters data to this date (inclusive). Defaults to the latest en_date_visit.
+#' @param interval Character. One of "month" (default), "quarter", "year".
+out_plot_treatment_proportions_time <- function(
+  data = screening_data,
+  start_date = NULL,
+  end_date = NULL,
+  interval = c("month", "quarter", "year")
+) {
+  interval <- match.arg(interval)
+
+  # Define readable labels for calc_any_treatment
+  treatment_labels <- c(
+    "No treatment" = "No treatment",
+    "MDT" = "MDT",
+    "TBRx" = "TBRx",
+    "TPT" = "TPT",
+    "SDR" = "SDR"
+  )
+
+  # Custom colors (Yellow for MDT, Greens/Blues for TB/TPT, Purple for SDR)
+  custom_colors <- c(
+    "No treatment" = "lightgrey",
+    "MDT" = "#FDE725FF",
+    "TBRx" = "#35B779FF",
+    "TPT" = "#31688EFF",
+    "SDR" = "#440154FF"
+  )
+
+  if (is.null(end_date)) {
+    end_date <- max(data$en_date_visit, na.rm = TRUE)
+  }
+  if (is.null(start_date)) {
+    start_date <- min(data$en_date_visit, na.rm = TRUE)
+  }
+
+  date_breaks <- switch(
+    interval,
+    "month" = "1 month",
+    "quarter" = "3 months",
+    "year" = "1 year"
+  )
+  date_labels <- switch(
+    interval,
+    "month" = "%b %Y",
+    "quarter" = "%b %Y",
+    "year" = "%Y"
+  )
+
+  # Data manipulation: bucket into the requested interval and coalesce for simplicity
+  plot_data <- data %>%
+    filter(en_date_visit >= start_date, en_date_visit <= end_date) %>%
+    mutate(
+      period_start = floor_date(en_date_visit, unit = interval),
+      calc_any_treatment = coalesce(
+        as.character(calc_any_treatment),
+        "No treatment"
+      ),
+      calc_any_treatment = factor(
+        calc_any_treatment,
+        levels = names(treatment_labels),
+        labels = treatment_labels
+      )
+    )
+
+  # Construct output: geom_bar(position = "fill") handles the % calculations
+  ggplot(plot_data, aes(x = period_start, fill = calc_any_treatment)) +
+    geom_bar(position = "fill") +
+    theme_light() +
+    labs(
+      title = paste0("Treatment Proportions by ", str_to_title(interval)),
+      x = str_to_title(interval),
+      y = "Proportion",
+      fill = "Treatment Type"
+    ) +
+    scale_y_continuous(labels = percent) +
+    scale_x_date(
+      date_breaks = date_breaks,
+      date_labels = date_labels
+    ) +
+    scale_fill_manual(values = custom_colors) +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1)
+    )
+}
+
+
+## Tables -------------------------------------
+
+#' Generate a detailed flextable of Leprosy yield (Presumptive & Confirmed) by age and sex (Landscape Optimized)
+#' @param data Dataframe. Defaults to screening_data from the environment
+out_tab_lep_yield_demographics_table <- function(data = screening_data) {
+  lep_summary_wide <- data %>%
+    filter(!is.na(age_cat), en_sex %in% c("M", "F"), !is.na(lep_refer)) %>%
+    mutate(
+      presumptive_lep = lep_refer == TRUE,
+      confirmed_lep = nlp_diagnosis == "Confirmed",
+      valid_lep = !is.na(lep_refer)
+    ) %>%
+    group_by(age_cat, en_sex) %>%
+    summarise(
+      presumptive_n = sum(presumptive_lep, na.rm = TRUE),
+      confirmed_n = sum(confirmed_lep, na.rm = TRUE),
+      valid_n = sum(valid_lep, na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    mutate(
+      percent_presumptive = round(100 * presumptive_n / valid_n, 1),
+      percent_confirmed = round(100 * confirmed_n / valid_n, 1)
+    ) %>%
+    pivot_wider(
+      names_from = en_sex,
+      values_from = c(
+        presumptive_n,
+        confirmed_n,
+        valid_n,
+        percent_presumptive,
+        percent_confirmed
+      ),
+      names_glue = "{en_sex}_{.value}"
+    ) %>%
+    arrange(age_cat)
+
+  col_keys <- c(
+    "age_cat",
+    "M_presumptive_n",
+    "M_percent_presumptive",
+    "M_confirmed_n",
+    "M_percent_confirmed",
+    "M_valid_n",
+    "F_presumptive_n",
+    "F_percent_presumptive",
+    "F_confirmed_n",
+    "F_percent_confirmed",
+    "F_valid_n"
+  )
+  header_labels <- c(
+    age_cat = "Age Group",
+    M_presumptive_n = "n",
+    M_percent_positive = "%",
+    M_confirmed_n = "n",
+    M_percent_confirmed = "%",
+    M_valid_n = "N",
+    F_presumptive_n = "n",
+    F_percent_presumptive = "%",
+    F_confirmed_n = "n",
+    F_percent_confirmed = "%",
+    F_valid_n = "N"
+  )
+
+  ft <- flextable(lep_summary_wide, col_keys = col_keys) %>%
+    set_header_labels(values = header_labels) %>%
+    add_header_row(
+      values = c(
+        "Age Group",
+        "Presumptive",
+        "Confirmed",
+        "Total",
+        "Presumptive",
+        "Confirmed",
+        "Total"
+      ),
+      colwidths = c(1, 2, 2, 1, 2, 2, 1)
+    ) %>%
+    add_header_row(
+      values = c("Age Group", "Male", "Female"),
+      colwidths = c(1, 5, 5)
+    ) %>%
+    add_header_lines(
+      values = "Table: Leprosy Screening Yield (Presumptive & Confirmed) by Age and Sex"
+    ) %>%
+    theme_pearl() %>%
+    merge_v(part = "header") %>%
+    # Landscape optimization
+    width(j = 1, width = 1.2) %>%
+    width(j = -1, width = 0.75) %>%
+    set_table_properties(layout = "fixed")
+
+  return(ft)
+}
+
+
+#' Generate a flextable of quarterly Leprosy referral outcomes
+#' @param data Dataframe. Defaults to screening_data from the environment
+out_tab_lep_referral_outcomes <- function(data = screening_data) {
+  lep_ref_raw <- data %>%
+    filter(lep_refer == TRUE) %>%
+    mutate(
+      quarter_start = floor_date(en_date_visit, "quarter"),
+      quarter = paste0(year(quarter_start), " Q", quarter(quarter_start)),
+      nlp_diagnosis = fct_explicit_na(
+        factor(nlp_diagnosis),
+        na_level = "Missing"
+      )
+    )
+  if (nrow(lep_ref_raw) > 0) {
+    quarter_seq <- seq.Date(
+      from = min(lep_ref_raw$quarter_start, na.rm = TRUE),
+      to = floor_date(Sys.Date(), "quarter"),
+      by = "3 months"
+    )
+    quarter_labels <- paste0(year(quarter_seq), " Q", quarter(quarter_seq))
+  } else {
+    quarter_labels <- character(0)
+  }
+
+  lep_ref_counts <- lep_ref_raw %>%
+    count(quarter, nlp_diagnosis) %>%
+    complete(
+      quarter = factor(quarter_labels, levels = quarter_labels, ordered = TRUE),
+      nlp_diagnosis,
+      fill = list(n = 0)
+    ) %>%
+    pivot_wider(
+      names_from = nlp_diagnosis,
+      values_from = n,
+      values_fill = 0
+    ) %>%
+    arrange(quarter)
+  lep_ref_counts <- lep_ref_counts %>%
+    mutate(Total = rowSums(select(., -quarter)))
+  total_row <- lep_ref_counts %>%
+    summarise(across(where(is.numeric), sum)) %>%
+    mutate(quarter = "Total")
+  lep_ref_counts_final <- bind_rows(lep_ref_counts, total_row)
+
+  lep_ref_props <- lep_ref_counts_final %>%
+    mutate(across(
+      -c(quarter, Total),
+      ~ round(.x / ifelse(Total == 0, 1, Total) * 100, 1)
+    ))
+  lep_ref_final_table <- lep_ref_counts_final %>%
+    mutate(across(
+      -c(quarter, Total),
+      ~ paste0(.x, " (", lep_ref_props[[cur_column()]], "%)")
+    ))
+
+  latest_q <- if (length(quarter_labels) > 0) max(quarter_labels) else "N/A"
+
+  ft <- lep_ref_final_table %>%
+    flextable() %>%
+    add_header_row(
+      values = paste("Table: Leprosy Referral Outcomes up to", latest_q),
+      colwidths = ncol(lep_ref_final_table)
+    ) %>%
+    theme_pearl() %>%
+    bold(i = nrow(lep_ref_final_table), part = "body") %>%
+    width(j = 1, width = 1.5) %>%
+    width(j = -1, width = 1.6) %>% # j = -1 applies to all other columns
+    set_table_properties(layout = "fixed")
+
+  return(ft)
+}
+
+
 #' Generate an annual leprosy-focused indicator table
 #' @param data_hh Dataframe. Defaults to household_data.
 #' @param data_scr Dataframe. Defaults to screening_data.
@@ -2205,31 +2250,62 @@ out_tab_tb_yield_demographics_table <- function(data = screening_data) {
 #' @param end_year Numeric. Optional; defaults to max year in data.
 #' @param font_size Numeric. Base font size (default 9).
 #' @param table_width Numeric. Total table width in inches (default NULL).
-out_tab_lep_annual <- function(
+#' Generate a leprosy-focused indicator table aggregated over a chosen time interval
+#'
+#' Aggregates household and screening/leprosy metrics into year, quarter, or
+#' month buckets across a date range. Formerly `out_tab_lep_annual()`
+#' (year-only); renamed and extended 2026-09 to support quarter/month
+#' granularity for grant reporting periods.
+#'
+#' @param data_hh Dataframe. Defaults to household_data.
+#' @param data_scr Dataframe. Defaults to screening_data.
+#' @param start_date Date. Optional; filters data from this date (inclusive). Defaults to the earliest en_date_visit.
+#' @param end_date Date. Optional; filters data to this date (inclusive). Defaults to the latest en_date_visit.
+#' @param interval Character. One of "year" (default), "quarter", "month".
+#' @param font_size Numeric. Base font size for the table (default 9).
+#' @param table_width Numeric. Total table width in inches (default NULL).
+#' @param return_data Logical. If TRUE, return the underlying wide tibble (numeric, unformatted) instead of a flextable (default FALSE).
+#'
+#' @return A formatted flextable object, or a tibble if return_data = TRUE.
+out_tab_lep_ind_time <- function(
   data_hh = household_data,
   data_scr = screening_data,
-  start_year = NULL,
-  end_year = NULL,
+  start_date = NULL,
+  end_date = NULL,
+  interval = c("year", "quarter", "month"),
   font_size = 9,
-  table_width = NULL
+  table_width = NULL,
+  return_data = FALSE
 ) {
-  # 1. Date/Year Setup
-  if (is.null(end_year)) {
-    end_year <- max(year(data_scr$en_date_visit), na.rm = TRUE)
+  interval <- match.arg(interval)
+
+  # 1. Date Range Setup
+  if (is.null(end_date)) {
+    end_date <- max(data_scr$en_date_visit, na.rm = TRUE)
   }
-  if (is.null(start_year)) {
-    start_year <- min(year(data_scr$en_date_visit), na.rm = TRUE)
+  if (is.null(start_date)) {
+    start_date <- min(data_scr$en_date_visit, na.rm = TRUE)
   }
 
-  years_range <- start_year:end_year
+  period_label <- function(x) {
+    switch(
+      interval,
+      "year" = as.character(year(x)),
+      "quarter" = paste0(year(x), "-Q", quarter(x)),
+      "month" = format(x, "%b %Y")
+    )
+  }
 
   # 2. Custom Aggregation Logic
 
   # A. Household Metrics
   hh_metrics <- data_hh %>%
-    mutate(Year = year(hh_date)) %>%
-    filter(Year %in% years_range, hh_reached == TRUE) %>%
-    group_by(Year) %>%
+    filter(hh_date >= start_date, hh_date <= end_date, hh_reached == TRUE) %>%
+    mutate(
+      Period = period_label(hh_date),
+      .order = floor_date(hh_date, unit = interval)
+    ) %>%
+    group_by(Period, .order) %>%
     summarise(
       "Enumerated (HH)" = n(),
       "Enumerated (Pop)" = sum(hh_size, na.rm = TRUE),
@@ -2239,9 +2315,12 @@ out_tab_lep_annual <- function(
 
   # B. Screening & Leprosy Metrics
   scr_metrics <- data_scr %>%
-    mutate(Year = year(en_date_visit)) %>%
-    filter(Year %in% years_range) %>%
-    group_by(Year) %>%
+    filter(en_date_visit >= start_date, en_date_visit <= end_date) %>%
+    mutate(
+      Period = period_label(en_date_visit),
+      .order = floor_date(en_date_visit, unit = interval)
+    ) %>%
+    group_by(Period, .order) %>%
     summarise(
       "Registered" = n(),
       "Screened for Leprosy" = sum(lepdec_bin, na.rm = TRUE),
@@ -2280,11 +2359,21 @@ out_tab_lep_annual <- function(
 
   # 3. Combine, Calculate Totals, and Format
 
-  # Create long format of all year-based metrics
+  # Ordered list of period labels actually present, in chronological order
+  period_cols <- bind_rows(
+    hh_metrics %>% select(Period, .order),
+    scr_metrics %>% select(Period, .order)
+  ) %>%
+    distinct() %>%
+    arrange(.order) %>%
+    pull(Period)
+
+  # Create long format of all period-based metrics
   combined_long <- hh_metrics %>%
-    full_join(scr_metrics, by = "Year") %>%
+    select(-.order) %>%
+    full_join(scr_metrics %>% select(-.order), by = "Period") %>%
     pivot_longer(
-      cols = -Year,
+      cols = -Period,
       names_to = "Indicator_Name",
       values_to = "Value"
     )
@@ -2293,33 +2382,48 @@ out_tab_lep_annual <- function(
   totals <- combined_long %>%
     group_by(Indicator_Name) %>%
     summarise(
-      Year = "Total",
+      Period = "Total",
       Value = sum(Value, na.rm = TRUE),
       .groups = "drop"
     )
 
+  combined_long <- bind_rows(combined_long, totals)
+
+  display_cols <- c(period_cols, "Total")
+
+  if (return_data) {
+    wide_numeric <- combined_long %>%
+      select(Period, Indicator_Name, Value) %>%
+      pivot_wider(
+        names_from = Period,
+        values_from = Value,
+        values_fill = 0
+      ) %>%
+      select(Indicator_Name, all_of(display_cols))
+    return(wide_numeric)
+  }
+
   # Join together, format numbers, and pivot wide
-  final_df <- bind_rows(
-    combined_long %>% mutate(Year = as.character(Year)),
-    totals
-  ) %>%
+  final_df <- combined_long %>%
     mutate(
       Val_Fmt = formatC(Value, format = "f", digits = 0, big.mark = ",")
     ) %>%
-    select(Year, Indicator_Name, Val_Fmt) %>%
+    select(Period, Indicator_Name, Val_Fmt) %>%
     pivot_wider(
-      names_from = Year,
+      names_from = Period,
       values_from = Val_Fmt,
       values_fill = "0"
-    )
+    ) %>%
+    select(Indicator_Name, all_of(display_cols))
 
-  year_cols <- as.character(years_range)
-  display_cols <- c(year_cols, "Total")
   title_text <- paste0(
-    "Annual Performance Indicators: ",
-    start_year,
+    "Leprosy Program Indicators: ",
+    first(period_cols),
     " - ",
-    end_year
+    last(period_cols),
+    " (by ",
+    str_to_title(interval),
+    ")"
   )
 
   # 4. Flextable Rendering
@@ -2339,13 +2443,11 @@ out_tab_lep_annual <- function(
     padding(i = subcat_rows, j = 1, padding.left = 15, part = "body") %>%
     italic(i = subcat_rows, j = 1, part = "body")
 
-  # 5. Scaling
+  # 5. Scaling: size columns to their contents (matches Word's "AutoFit to
+  # Contents"), then squeeze proportionally to table_width if supplied.
+  ft <- autofit(ft)
   if (!is.null(table_width)) {
-    num_data_cols <- length(display_cols)
-    # Allocation: 40% for Indicator labels, 60% spread across years + total
-    ft <- ft %>%
-      width(j = 1, width = table_width * 0.4) %>%
-      width(j = display_cols, width = (table_width * 0.6) / num_data_cols)
+    ft <- fit_to_width(ft, max_width = table_width)
   }
 
   return(ft)
@@ -2519,6 +2621,268 @@ out_tab_lep_village <- function(
 }
 
 
+#' Generate a flextable of treatment proportions (Counts and Row-wise %) over a chosen time interval
+#'
+#' @param data Dataframe. Defaults to screening_data from the environment.
+#' @param start_date Date. Optional; filters data from this date (inclusive). Defaults to the earliest en_date_visit.
+#' @param end_date Date. Optional; filters data to this date (inclusive). Defaults to the latest en_date_visit.
+#' @param interval Character. One of "month" (default), "quarter", "year".
+#' @param return_data Logical. If TRUE, return the underlying counts tibble instead of a flextable (default FALSE).
+#'
+#' @return A formatted flextable object, or a tibble if return_data = TRUE.
+out_tab_treatment_proportions_time <- function(
+  data = screening_data,
+  start_date = NULL,
+  end_date = NULL,
+  interval = c("month", "quarter", "year"),
+  return_data = FALSE
+) {
+  interval <- match.arg(interval)
+
+  # 1. Configuration & Labels
+  treatment_labels <- c(
+    "SDR" = "SDR",
+    "TPT" = "TPT",
+    "TBRx" = "TBRx",
+    "MDT" = "MDT",
+    "No treatment" = "No treatment"
+  )
+
+  if (is.null(end_date)) {
+    end_date <- max(data$en_date_visit, na.rm = TRUE)
+  }
+  if (is.null(start_date)) {
+    start_date <- min(data$en_date_visit, na.rm = TRUE)
+  }
+
+  period_label <- function(x) {
+    switch(
+      interval,
+      "year" = as.character(year(x)),
+      "quarter" = paste0(year(x), "-Q", quarter(x)),
+      "month" = format(x, "%b %Y")
+    )
+  }
+
+  # 2. Data Aggregation
+  treatment_counts <- data %>%
+    filter(en_date_visit >= start_date, en_date_visit <= end_date) %>%
+    mutate(
+      period_start = floor_date(en_date_visit, unit = interval),
+      calc_any_treatment = coalesce(
+        as.character(calc_any_treatment),
+        "No treatment"
+      ),
+      calc_any_treatment = factor(
+        calc_any_treatment,
+        levels = names(treatment_labels),
+        labels = treatment_labels
+      )
+    ) %>%
+    count(period_start, calc_any_treatment) %>%
+    pivot_longer(
+      cols = calc_any_treatment,
+      names_to = "Indicator_Key",
+      values_to = "Metric"
+    ) %>%
+    pivot_wider(names_from = Metric, values_from = n, values_fill = 0) %>%
+    arrange(period_start)
+
+  # 3. Add Calculated Columns
+  treatment_counts <- treatment_counts %>%
+    mutate(
+      `Any treatment` = SDR + TPT + TBRx + MDT,
+      Total = `Any treatment` + `No treatment`,
+      period_label = period_label(period_start)
+    ) %>%
+    select(
+      period_label,
+      SDR,
+      TPT,
+      TBRx,
+      MDT,
+      `Any treatment`,
+      `No treatment`,
+      Total
+    )
+
+  # Total Row
+  total_row <- treatment_counts %>%
+    summarise(across(where(is.numeric), sum)) %>%
+    mutate(period_label = "Total")
+
+  treatment_counts_final <- bind_rows(treatment_counts, total_row)
+
+  if (return_data) {
+    return(treatment_counts_final)
+  }
+
+  # 4. Compute Proportions
+  treatment_proportions <- treatment_counts_final %>%
+    mutate(across(
+      -c(period_label, Total),
+      ~ round(.x / ifelse(Total == 0, 1, Total) * 100, 1)
+    ))
+
+  treatment_final_table <- treatment_counts_final %>%
+    mutate(across(
+      -c(period_label, Total),
+      ~ paste0(.x, " (", treatment_proportions[[cur_column()]], "%)")
+    ))
+
+  # 5. Styling
+  ft <- treatment_final_table %>%
+    flextable() %>%
+    add_header_lines(
+      values = paste0(
+        "Table: Treatment Proportions by ",
+        str_to_title(interval),
+        " (Participant Yield)"
+      )
+    ) %>%
+    set_header_labels(period_label = str_to_title(interval)) %>%
+    theme_pearl() %>%
+    bg(j = "Any treatment", bg = "#F9F9F9") %>%
+    bold(j = "Any treatment") %>%
+    bold(i = nrow(treatment_final_table), part = "body")
+
+  # Size columns to their contents (matches Word's "AutoFit to Contents")
+  ft <- autofit(ft)
+
+  return(ft)
+}
+
+
+#' Write the leprosy grant report data package (xlsx) with one sheet per underlying table
+#'
+#' Companion xlsx export for the LRI (leprosy grant) periodic report. Reuses
+#' `out_tab_lep_ind_time(return_data = TRUE)` and
+#' `out_tab_treatment_proportions_time(return_data = TRUE)` so the numbers in
+#' the workbook always match the tables/plot rendered in the report.
+#'
+#' @param data_hh Dataframe. Defaults to household_data.
+#' @param data_scr Dataframe. Defaults to screening_data.
+#' @param start_date Date. Optional; filters data from this date (inclusive). Defaults to the earliest en_date_visit.
+#' @param end_date Date. Optional; filters data to this date (inclusive). Defaults to the latest en_date_visit.
+#' @param interval Character. One of "year" (default), "quarter", "month".
+#' @param output_path Character. Optional; full path for the .xlsx file. Defaults to reports/LRI_report/LRI_report_data.xlsx (overwritten each run - matches the static docx output location in 03_LRI_report.qmd; datestamp/archive both manually if you want to keep a specific period's version).
+#'
+#' @return Invisibly, the output_path written to.
+out_xlsx_lri_report <- function(
+  data_hh = household_data,
+  data_scr = screening_data,
+  start_date = NULL,
+  end_date = NULL,
+  interval = "year",
+  output_path = NULL
+) {
+  if (is.null(output_path)) {
+    output_dir <- here("reports", "LRI_report")
+    if (!dir.exists(output_dir)) {
+      dir.create(output_dir, recursive = TRUE)
+    }
+    output_path <- file.path(output_dir, "LRI_report_data.xlsx")
+  }
+
+  lep_indicators <- out_tab_lep_ind_time(
+    data_hh = data_hh,
+    data_scr = data_scr,
+    start_date = start_date,
+    end_date = end_date,
+    interval = interval,
+    return_data = TRUE
+  )
+
+  treatment_counts <- out_tab_treatment_proportions_time(
+    data = data_scr,
+    start_date = start_date,
+    end_date = end_date,
+    interval = interval,
+    return_data = TRUE
+  )
+
+  treatment_percentages <- treatment_counts %>%
+    mutate(across(
+      -c(period_label, Total),
+      ~ round(.x / ifelse(Total == 0, 1, Total) * 100, 1)
+    ))
+
+  wb <- createWorkbook()
+  addWorksheet(wb, "Leprosy Indicators")
+  writeData(wb, "Leprosy Indicators", lep_indicators)
+  addWorksheet(wb, "Treatment Proportions (Counts)")
+  writeData(wb, "Treatment Proportions (Counts)", treatment_counts)
+  addWorksheet(wb, "Treatment Proportions (%)")
+  writeData(wb, "Treatment Proportions (%)", treatment_percentages)
+  saveWorkbook(wb, output_path, overwrite = TRUE)
+
+  invisible(output_path)
+}
+
+
+# --- SCABIES SCREENING OUTCOMES -----------------------------------------------
+
+#' Generate a flextable of Scabies prevalence by age group and sex
+#' @param data Dataframe. Defaults to screening_data from the environment
+out_tab_scabies_prevalence_demographics <- function(data = screening_data) {
+  scabies_data <- data %>%
+    filter(!is.na(lep_scabies), en_sex %in% c("M", "F")) %>%
+    mutate(age_cat = fct_explicit_na(factor(age_cat), na_level = "Missing"))
+  scabies_wide <- scabies_data %>%
+    group_by(age_cat, en_sex) %>%
+    summarise(
+      prop = round(mean(lep_scabies == TRUE, na.rm = TRUE) * 100, 1),
+      .groups = "drop"
+    ) %>%
+    pivot_wider(names_from = en_sex, values_from = prop)
+  scabies_by_age <- scabies_data %>%
+    group_by(age_cat) %>%
+    summarise(
+      Overall = round(mean(lep_scabies == TRUE, na.rm = TRUE) * 100, 1),
+      .groups = "drop"
+    )
+  scabies_by_sex <- scabies_data %>%
+    group_by(en_sex) %>%
+    summarise(
+      prop = round(mean(lep_scabies == TRUE, na.rm = TRUE) * 100, 1),
+      .groups = "drop"
+    )
+  grand_total <- round(
+    mean(scabies_data$lep_scabies == TRUE, na.rm = TRUE) * 100,
+    1
+  )
+
+  scabies_final <- scabies_wide %>%
+    left_join(scabies_by_age, by = "age_cat") %>%
+    arrange(age_cat) %>%
+    bind_rows(tibble(
+      age_cat = "Overall",
+      M = scabies_by_sex$prop[scabies_by_sex$en_sex == "M"],
+      F = scabies_by_sex$prop[scabies_by_sex$en_sex == "F"],
+      Overall = grand_total
+    ))
+
+  ft <- scabies_final %>%
+    flextable() %>%
+    set_header_labels(
+      age_cat = "Age Category",
+      M = "Male (%)",
+      F = "Female (%)",
+      Overall = "Total (%)"
+    ) %>%
+    add_header_lines(
+      values = "Table: Scabies Prevalence by Age Group and Sex (Evaluable Participants)"
+    ) %>%
+    theme_pearl() %>%
+    bold(i = nrow(scabies_final), part = "body") %>%
+    bold(j = "Overall", part = "all") %>%
+    width(j = 1, width = 1.8) %>%
+    autofit()
+
+  return(ft)
+}
+
+
 # --- TPT OUTPUTS ------------------------------------------------
 
 #' Plot TPT cascade: from TST positive to treatment completion
@@ -2629,78 +2993,6 @@ out_plot_tpt_cascade <- function(
 }
 
 
-#' Plot pie chart of reasons for TPT ineligibility
-#' @param data Dataframe. Defaults to screening_data from the environment
-out_plot_tpt_ineligibility_reasons <- function(data = screening_data) {
-  # Data manipulation: Using the pre-calculated column for efficiency
-  tpt_ineligible <- data %>%
-    filter(!is.na(tpt_inelig_reason)) %>%
-    count(tpt_inelig_reason, name = "n") %>%
-    rename(reason = tpt_inelig_reason) %>%
-    arrange(desc(n))
-
-  # Defensive check for empty datasets
-  if (nrow(tpt_ineligible) == 0) {
-    tpt_ineligible <- tibble(reason = "No data", n = 1L)
-  }
-
-  # Construct output
-  ggplot(tpt_ineligible, aes(x = "", y = n, fill = reason)) +
-    geom_bar(stat = "identity", width = 1) +
-    coord_polar(theta = "y") +
-    theme_void() +
-    theme(plot.background = element_rect(fill = "white", color = NA)) + # Added white background
-    labs(
-      title = "Reasons for TPT Ineligibility (All patients)",
-      fill = "Reason"
-    ) +
-    scale_fill_viridis_d() +
-    geom_text(
-      aes(label = n),
-      position = position_stack(vjust = 0.5),
-      size = 5,
-      fontface = "bold",
-      colour = "grey10"
-    )
-}
-
-
-#' Plot pie chart of reasons for incomplete TPT assessment
-#' @param data Dataframe. Defaults to screening_data from the environment
-out_plot_tpt_assessment_gaps <- function(data = screening_data) {
-  # Data manipulation: Leverage the pre-calculated column from Script 03
-  tpt_not_assessed <- data %>%
-    filter(!is.na(tpt_not_assessed_reason)) %>%
-    count(tpt_not_assessed_reason, name = "n") %>%
-    rename(reason = tpt_not_assessed_reason) %>%
-    arrange(desc(n))
-
-  # Handle empty case to avoid a blank plot error
-  if (nrow(tpt_not_assessed) == 0) {
-    tpt_not_assessed <- tibble(reason = "No data", n = 1L)
-  }
-
-  # Construct output
-  ggplot(tpt_not_assessed, aes(x = "", y = n, fill = reason)) +
-    geom_bar(stat = "identity", width = 1) +
-    coord_polar(theta = "y") +
-    theme_void() +
-    theme(plot.background = element_rect(fill = "white", color = NA)) + # Added white background
-    labs(
-      title = "Reasons for Not Completing TPT Assessment (All patients)",
-      fill = "Reason"
-    ) +
-    scale_fill_viridis_d() +
-    geom_text(
-      aes(label = n),
-      position = position_stack(vjust = 0.5),
-      size = 5,
-      fontface = "bold",
-      colour = "grey10"
-    )
-}
-
-
 #' Plot TPT Risk Assessment Cascade
 #' @param data Dataframe. Defaults to screening_data from the environment
 out_plot_tpt_risk_cascade <- function(data = screening_data) {
@@ -2775,6 +3067,290 @@ out_plot_tpt_risk_cascade <- function(data = screening_data) {
 }
 
 
+#' Plot pie chart of reasons for TPT ineligibility
+#' @param data Dataframe. Defaults to screening_data from the environment
+out_plot_tpt_ineligibility_reasons <- function(data = screening_data) {
+  # Data manipulation: Using the pre-calculated column for efficiency
+  tpt_ineligible <- data %>%
+    filter(!is.na(tpt_inelig_reason)) %>%
+    count(tpt_inelig_reason, name = "n") %>%
+    rename(reason = tpt_inelig_reason) %>%
+    arrange(desc(n))
+
+  # Defensive check for empty datasets
+  if (nrow(tpt_ineligible) == 0) {
+    tpt_ineligible <- tibble(reason = "No data", n = 1L)
+  }
+
+  # Construct output
+  ggplot(tpt_ineligible, aes(x = "", y = n, fill = reason)) +
+    geom_bar(stat = "identity", width = 1) +
+    coord_polar(theta = "y") +
+    theme_void() +
+    theme(plot.background = element_rect(fill = "white", color = NA)) + # Added white background
+    labs(
+      title = "Reasons for TPT Ineligibility (All patients)",
+      fill = "Reason"
+    ) +
+    scale_fill_viridis_d() +
+    geom_text(
+      aes(label = n),
+      position = position_stack(vjust = 0.5),
+      size = 5,
+      fontface = "bold",
+      colour = "grey10"
+    )
+}
+
+
+#' Plot pie chart of reasons for incomplete TPT assessment
+#' @param data Dataframe. Defaults to screening_data from the environment
+out_plot_tpt_assessment_gaps <- function(data = screening_data) {
+  # Data manipulation: Leverage the pre-calculated column from Script 03
+  tpt_not_assessed <- data %>%
+    filter(!is.na(tpt_not_assessed_reason)) %>%
+    count(tpt_not_assessed_reason, name = "n") %>%
+    rename(reason = tpt_not_assessed_reason) %>%
+    arrange(desc(n))
+
+  # Handle empty case to avoid a blank plot error
+  if (nrow(tpt_not_assessed) == 0) {
+    tpt_not_assessed <- tibble(reason = "No data", n = 1L)
+  }
+
+  # Construct output
+  ggplot(tpt_not_assessed, aes(x = "", y = n, fill = reason)) +
+    geom_bar(stat = "identity", width = 1) +
+    coord_polar(theta = "y") +
+    theme_void() +
+    theme(plot.background = element_rect(fill = "white", color = NA)) + # Added white background
+    labs(
+      title = "Reasons for Not Completing TPT Assessment (All patients)",
+      fill = "Reason"
+    ) +
+    scale_fill_viridis_d() +
+    geom_text(
+      aes(label = n),
+      position = position_stack(vjust = 0.5),
+      size = 5,
+      fontface = "bold",
+      colour = "grey10"
+    )
+}
+
+
+#' Generate a flextable of TPT initiation status by clinical risk category (Landscape Optimized)
+#' @param data Dataframe. Defaults to screening_data from the environment
+out_tab_tpt_initiation_by_risk <- function(data = screening_data) {
+  # 1. Data Prep
+  sd_assess <- data %>%
+    filter(
+      tst_read_positive == "Positive TST",
+      tb_decision == "Ruled out TB" | ntp_diagnosis == "Ruled out"
+    ) %>%
+    mutate(
+      risk_cat = fct_explicit_na(
+        as.factor(prerx_riskcat),
+        na_level = "(Missing)"
+      ) |>
+        as.character(),
+      alt_available = coalesce(tptrf_alt_result, FALSE) | !is.na(calc_alt_last),
+      eligible = prerx_eligible == "Yes",
+      not_eligible = prerx_eligible == "No",
+      started = coalesce(prerx_start, FALSE),
+      not_started = !coalesce(prerx_start, FALSE)
+    )
+
+  risk_levels <- c(
+    "High",
+    "Moderate high",
+    "Moderate",
+    "Low",
+    "Not yet known",
+    "(Missing)"
+  )
+  sd_assess <- sd_assess %>%
+    mutate(
+      risk_cat = factor(
+        risk_cat,
+        levels = intersect(risk_levels, unique(c(risk_levels, risk_cat)))
+      )
+    )
+
+  tbl_init <- sd_assess %>%
+    group_by(risk_cat) %>%
+    summarise(
+      `ALT_avail` = sum(alt_available, na.rm = TRUE),
+      `ALT_not` = sum(!alt_available, na.rm = TRUE),
+      `Rec_eligible` = sum(eligible, na.rm = TRUE),
+      `Rec_not` = sum(not_eligible, na.rm = TRUE),
+      `Start_TPT` = sum(started, na.rm = TRUE),
+      `Not_started` = sum(not_started, na.rm = TRUE),
+      Total = n(),
+      .groups = "drop"
+    )
+
+  grand_total <- sum(tbl_init$Total, na.rm = TRUE)
+  tbl_init <- tbl_init %>%
+    mutate(
+      All_n = Total,
+      All_pct = if (grand_total > 0) round(100 * Total / grand_total, 1) else 0
+    )
+  grand_row <- tbl_init %>%
+    select(-All_pct) %>%
+    summarise(across(where(is.numeric), ~ sum(.x, na.rm = TRUE))) %>%
+    mutate(risk_cat = "Total", All_pct = 100)
+  tbl_final <- bind_rows(tbl_init, grand_row) %>%
+    mutate(ALT_sp = "", Ass_sp = "", Sta_sp = "") %>%
+    select(
+      risk_cat,
+      ALT_avail,
+      ALT_not,
+      ALT_sp,
+      Rec_eligible,
+      Rec_not,
+      Ass_sp,
+      Start_TPT,
+      Not_started,
+      Sta_sp,
+      All_n,
+      All_pct
+    )
+
+  # 2. Construction and Styling
+  ft <- tbl_final %>%
+    flextable() %>%
+    add_header_row(
+      values = c(
+        "",
+        "ALT result",
+        "",
+        "TPT assessment",
+        "",
+        "TPT status",
+        "",
+        "All"
+      ),
+      colwidths = c(1, 2, 1, 2, 1, 2, 1, 2)
+    ) %>%
+    add_header_lines(
+      values = "Table: TPT Initiation Status by Clinical Risk Category"
+    ) %>%
+    set_header_labels(
+      risk_cat = "Risk group",
+      ALT_avail = "Available",
+      ALT_not = "Not available",
+      ALT_sp = "",
+      Rec_eligible = "Eligible",
+      Rec_not = "Not eligible",
+      Ass_sp = "",
+      Start_TPT = "Started",
+      Not_started = "Not started",
+      Sta_sp = "",
+      All_n = "n",
+      All_pct = "%"
+    ) %>%
+    theme_pearl() %>%
+    bold(i = ~ risk_cat == "Total") %>%
+    colformat_double(j = "All_pct", digits = 1, suffix = "%") %>%
+    # LANDSCAPE OPTIMIZATION
+    width(j = 1, width = 1.5) %>%
+    width(j = c(2, 3, 5, 6, 8, 9, 11, 12), width = 0.85) %>% # Standard data columns
+    width(j = c(4, 7, 10), width = 0.15) %>% # Skinny spacers
+    set_table_properties(layout = "fixed")
+
+  return(ft)
+}
+
+
+#' Plot age-sex pyramid for the TPT treatment cohort
+#' @param data Dataframe. Defaults to treatment_data from the environment
+out_plot_tpt_age_pyramid <- function(data = treatment_data) {
+  # 1. Data Preparation
+  # Note: apyramid handles the 'split_by' variable as a factor automatically,
+  # but pre-calculating the factor ensures the legend order is consistent.
+  plot_data <- data %>%
+    filter(tpt_sex %in% c("M", "F"), !is.na(age_cat)) %>%
+    mutate(
+      tpt_sex = factor(
+        tpt_sex,
+        levels = c("M", "F"),
+        labels = c("Male", "Female")
+      )
+    )
+
+  # 2. Construct Output using apyramid::age_pyramid
+  age_pyramid(
+    data = plot_data,
+    age_group = "age_cat",
+    split_by = "tpt_sex"
+  ) +
+    scale_fill_viridis_d(option = "F", begin = 0.4, end = 0.7) +
+    labs(
+      title = "Age–sex distribution of people on TPT",
+      subtitle = "Treatment dataset only",
+      x = "Count",
+      y = "Age category"
+    ) +
+    theme_light() +
+    theme(
+      legend.title = element_blank(),
+      legend.position = "bottom"
+    )
+}
+
+
+#' Generate a flextable of TPT patients by age and sex
+#' @param data Dataframe. Defaults to treatment_data from the environment
+out_tab_tpt_demographics_count <- function(data = treatment_data) {
+  # 1. Data Preparation
+  table_data <- data %>%
+    filter(tpt_sex %in% c("M", "F"), !is.na(age_cat)) %>%
+    mutate(
+      tpt_sex = factor(tpt_sex, levels = c("M", "F")),
+      age_cat = factor(age_cat)
+    ) %>%
+    count(age_cat, tpt_sex, name = "n") %>%
+    complete(
+      age_cat = factor(levels(data$age_cat), levels = levels(data$age_cat)),
+      tpt_sex = factor(c("M", "F"), levels = c("M", "F")),
+      fill = list(n = 0)
+    ) %>%
+    arrange(age_cat, tpt_sex) %>%
+    pivot_wider(names_from = tpt_sex, values_from = n, values_fill = 0) %>%
+    mutate(Total = M + F)
+
+  total_row <- table_data %>%
+    summarise(
+      age_cat = "Total",
+      M = sum(M, na.rm = TRUE),
+      F = sum(F, na.rm = TRUE),
+      Total = sum(Total, na.rm = TRUE)
+    )
+
+  table_final <- bind_rows(table_data, total_row)
+
+  # 3. Styling
+  title_text <- paste0(
+    "Table: TPT Patients by Age and Sex (Generated ",
+    format(Sys.Date(), "%d %b %Y"),
+    ")"
+  )
+
+  ft <- table_final %>%
+    rename(`Age group` = age_cat) %>%
+    flextable() %>%
+    add_header_lines(values = title_text) %>%
+    theme_pearl() %>%
+    bold(i = ~ `Age group` == "Total", part = "body") %>%
+    colformat_int(j = c("M", "F", "Total"), big.mark = ",") %>%
+    width(j = "Age group", width = 1.5) %>%
+    autofit()
+
+  return(ft)
+}
+
+
 #' Plot monthly proportions of TPT outcomes
 #' @param data Dataframe. Defaults to treatment_data from the environment
 out_plot_tpt_outcome_proportions <- function(data = treatment_data) {
@@ -2821,242 +3397,6 @@ out_plot_tpt_outcome_proportions <- function(data = treatment_data) {
     ) +
     scale_fill_viridis_d(direction = -1) +
     theme(
-      axis.text.x = element_text(angle = 45, hjust = 1)
-    )
-}
-
-
-#' Plot monthly treatment follow-up and completion rates by start cohort
-#' @param data Dataframe. Defaults to monthly_long from the environment
-out_plot_tpt_followup_monthly <- function(data = monthly_long) {
-  # 1. Internal configuration: Programmatic Events
-  events_df <- get_pearl_events()
-
-  # 2. Indicator mapping
-  indicator_labels_tpt <- c(
-    "tpt_1m_done_pct" = "1-Month Review Done / Expected",
-    "tpt_3m_done_pct" = "3-Month Review Done / Expected",
-    "tpt_4m_done_pct" = "4-Month Review Done / Expected",
-    "tpt_outcome_assigned_pct" = "Outcome Assigned / Started",
-    "tpt_completed_pct" = "Completed / Started"
-  )
-
-  # 3. Data Preparation
-  plot_data <- data %>%
-    filter(Indicator %in% names(indicator_labels_tpt)) %>%
-    mutate(Indicator = recode(Indicator, !!!indicator_labels_tpt))
-
-  # 4. Dynamic Headroom Calculation
-  y_max <- suppressWarnings(max(plot_data$Value, na.rm = TRUE))
-  y_cap <- if (is.finite(y_max)) ceiling(y_max / 10) * 10 else 100
-  if (y_cap < 100) {
-    y_cap <- 100
-  } # ensure standard 0-100 range at minimum
-
-  # 5. Construct Output
-  ggplot(
-    plot_data,
-    aes(x = period_start, y = Value, color = Indicator, group = Indicator)
-  ) +
-    geom_line(linewidth = 0.9) +
-    geom_point(size = 1.8, na.rm = TRUE) +
-    scale_y_continuous(
-      labels = function(x) paste0(x, "%"),
-      limits = c(0, y_cap),
-      breaks = seq(0, y_cap, by = 10),
-      sec.axis = sec_axis(
-        ~.,
-        labels = function(x) paste0(x, "%"),
-        breaks = seq(0, y_cap, by = 10),
-        name = NULL
-      )
-    ) +
-    scale_x_date(date_breaks = "1 month", date_labels = "%b %Y") +
-    scale_color_viridis_d(option = "F", begin = 0.2, end = 0.8) +
-    labs(
-      title = "Monthly treatment follow-up & completion (start cohorts)",
-      x = "Month",
-      y = "Percent",
-      color = "Indicator"
-    ) +
-    theme_light() +
-    theme(
-      plot.title = element_text(size = 11),
-      axis.title = element_text(size = 10),
-      axis.text = element_text(size = 9),
-      legend.title = element_blank(),
-      legend.text = element_text(size = 9),
-      axis.text.x = element_text(angle = 45, hjust = 1),
-      legend.position = "bottom",
-      axis.ticks.y.right = element_line()
-    ) +
-    # Annotated Events
-    geom_vline(
-      data = events_df,
-      aes(xintercept = as.numeric(period_start)),
-      linetype = "dashed",
-      color = "grey"
-    ) +
-    geom_text(
-      data = events_df,
-      aes(x = period_start + 3, y = y_cap * 0.95, label = event_label),
-      size = 3.3,
-      color = "black",
-      inherit.aes = FALSE,
-      hjust = 0,
-      vjust = 0
-    )
-}
-
-
-#' Plot TST-Positive treatment retention (Step Function)
-#' @param data Dataframe. Defaults to treatment_data from the environment
-#' @param max_day Integer. Number of days to plot (default 168 / 24 weeks)
-out_plot_tpt_retention_step <- function(data = treatment_data, max_day = 168) {
-  # 1. Build the cohort
-  td_cohort <- data %>%
-    filter(!is.na(tpt_start_date), !is.na(tpt_dur_real)) %>%
-    transmute(record_id, dur = as.integer(tpt_dur_real)) %>%
-    mutate(dur = if_else(is.na(dur) | dur < 0, 0L, dur))
-
-  cohort_n <- nrow(td_cohort)
-  days_vec <- 0:max_day
-
-  # 2. Optimized Vectorization
-  if (cohort_n == 0) {
-    retention <- tibble(day = days_vec, on_n = 0L, pct_on = NA_real_)
-  } else {
-    retention <- tibble(
-      day = days_vec,
-      on_n = rowSums(outer(days_vec, td_cohort$dur, "<="))
-    ) %>%
-      mutate(pct_on = (on_n / cohort_n) * 100)
-  }
-
-  # 3. Construct Output
-  ggplot(retention, aes(x = day, y = pct_on)) +
-    geom_step(linewidth = 1, color = "midnightblue") +
-    # Weekly anchors
-    geom_point(data = filter(retention, day %% 7 == 0), size = 1.6) +
-    scale_y_continuous(
-      limits = c(0, 100),
-      breaks = seq(0, 100, 10),
-      # Fix: Use label_number with suffix instead of label_append
-      labels = label_number(suffix = "%")
-    ) +
-    scale_x_continuous(
-      limits = c(0, max_day),
-      breaks = seq(0, max_day, 14),
-      minor_breaks = seq(0, max_day, 7)
-    ) +
-    labs(
-      title = "Treatment retention over time (all starts pooled)",
-      subtitle = paste0("Cohort size N = ", cohort_n, "; day 0 = start of TPT"),
-      x = "Days since TPT start",
-      y = "On treatment (%)"
-    ) +
-    theme_light() +
-    theme(
-      plot.title = element_text(size = 11, face = "bold"),
-      axis.title = element_text(size = 10),
-      panel.grid.minor = element_line(color = "grey95")
-    )
-}
-
-
-#' Plot age-sex pyramid for the TPT treatment cohort
-#' @param data Dataframe. Defaults to treatment_data from the environment
-out_plot_tpt_age_pyramid <- function(data = treatment_data) {
-  # 1. Data Preparation
-  # Note: apyramid handles the 'split_by' variable as a factor automatically,
-  # but pre-calculating the factor ensures the legend order is consistent.
-  plot_data <- data %>%
-    filter(tpt_sex %in% c("M", "F"), !is.na(age_cat)) %>%
-    mutate(
-      tpt_sex = factor(
-        tpt_sex,
-        levels = c("M", "F"),
-        labels = c("Male", "Female")
-      )
-    )
-
-  # 2. Construct Output using apyramid::age_pyramid
-  age_pyramid(
-    data = plot_data,
-    age_group = "age_cat",
-    split_by = "tpt_sex"
-  ) +
-    scale_fill_viridis_d(option = "F", begin = 0.4, end = 0.7) +
-    labs(
-      title = "Age–sex distribution of people on TPT",
-      subtitle = "Treatment dataset only",
-      x = "Count",
-      y = "Age category"
-    ) +
-    theme_light() +
-    theme(
-      legend.title = element_blank(),
-      legend.position = "bottom"
-    )
-}
-
-
-#' Plot prevalence of any symptoms during TPT by age group and sex
-#' @param data Dataframe. Defaults to treatment_data from the environment
-out_plot_tpt_symptoms_demographics <- function(data = treatment_data) {
-  # 1. Data Preparation: Aggregate symptoms across all monitoring timepoints
-  plot_data <- data %>%
-    filter(
-      tpt_sex %in% c("M", "F"),
-      !is.na(age_cat),
-      !is.na(tpt_start_date)
-    ) %>%
-    mutate(
-      # Standardize sex factor for consistent visual layout
-      tpt_sex = factor(
-        tpt_sex,
-        levels = c("F", "M"),
-        labels = c("Female", "Male")
-      ),
-      # Vectorized logic for 'any symptom' across the treatment journey
-      any_sx = coalesce(`1m_any_true`, FALSE) |
-        coalesce(`3m_any_true`, FALSE) |
-        coalesce(`4m_any_true`, FALSE) |
-        coalesce(`ae_any_true`, FALSE)
-    ) %>%
-    group_by(age_cat, tpt_sex) %>%
-    summarise(
-      # Calculate prevalence as a decimal for scales compatibility
-      prevalence = mean(any_sx, na.rm = TRUE),
-      n = n(),
-      .groups = "drop"
-    )
-
-  # 2. Dynamic Headroom Calculation (Rounded to nearest 5%)
-  y_max <- suppressWarnings(max(plot_data$prevalence, na.rm = TRUE))
-  y_cap <- if (is.finite(y_max)) max(0.05, ceiling(y_max * 20) / 20) else 0.05
-
-  # 3. Construct Output
-  ggplot(plot_data, aes(x = age_cat, y = prevalence, fill = tpt_sex)) +
-    geom_col(position = position_dodge(width = 0.7), width = 0.65) +
-    scale_y_continuous(
-      limits = c(0, y_cap),
-      labels = percent_format(accuracy = 1),
-      expand = expansion(mult = c(0, 0.1))
-    ) +
-    scale_fill_viridis_d(option = "F", begin = 0.2, end = 0.8, name = "Sex") +
-    labs(
-      title = "Symptoms during TPT monitoring by age group and sex",
-      subtitle = "Denominator: Individuals started on TPT with at least one follow-up record",
-      x = "Age group",
-      y = "Prevalence of any symptom (%)"
-    ) +
-    theme_light() +
-    theme(
-      plot.title = element_text(size = 11, face = "bold"),
-      axis.title = element_text(size = 10),
-      axis.text = element_text(size = 9),
-      legend.position = "bottom",
       axis.text.x = element_text(angle = 45, hjust = 1)
     )
 }
@@ -3160,54 +3500,319 @@ out_tab_tpt_outcomes_monthly <- function(
 }
 
 
-#' Generate a flextable of TPT patients by age and sex
+#' Plot TST-Positive treatment retention (Step Function)
 #' @param data Dataframe. Defaults to treatment_data from the environment
-out_tab_tpt_demographics_count <- function(data = treatment_data) {
-  # 1. Data Preparation
-  table_data <- data %>%
-    filter(tpt_sex %in% c("M", "F"), !is.na(age_cat)) %>%
-    mutate(
-      tpt_sex = factor(tpt_sex, levels = c("M", "F")),
-      age_cat = factor(age_cat)
-    ) %>%
-    count(age_cat, tpt_sex, name = "n") %>%
-    complete(
-      age_cat = factor(levels(data$age_cat), levels = levels(data$age_cat)),
-      tpt_sex = factor(c("M", "F"), levels = c("M", "F")),
-      fill = list(n = 0)
-    ) %>%
-    arrange(age_cat, tpt_sex) %>%
-    pivot_wider(names_from = tpt_sex, values_from = n, values_fill = 0) %>%
-    mutate(Total = M + F)
+#' @param max_day Integer. Number of days to plot (default 168 / 24 weeks)
+out_plot_tpt_retention_step <- function(data = treatment_data, max_day = 168) {
+  # 1. Build the cohort
+  td_cohort <- data %>%
+    filter(!is.na(tpt_start_date), !is.na(tpt_dur_real)) %>%
+    transmute(record_id, dur = as.integer(tpt_dur_real)) %>%
+    mutate(dur = if_else(is.na(dur) | dur < 0, 0L, dur))
 
-  total_row <- table_data %>%
-    summarise(
-      age_cat = "Total",
-      M = sum(M, na.rm = TRUE),
-      F = sum(F, na.rm = TRUE),
-      Total = sum(Total, na.rm = TRUE)
+  cohort_n <- nrow(td_cohort)
+  days_vec <- 0:max_day
+
+  # 2. Optimized Vectorization
+  if (cohort_n == 0) {
+    retention <- tibble(day = days_vec, on_n = 0L, pct_on = NA_real_)
+  } else {
+    retention <- tibble(
+      day = days_vec,
+      on_n = rowSums(outer(days_vec, td_cohort$dur, "<="))
+    ) %>%
+      mutate(pct_on = (on_n / cohort_n) * 100)
+  }
+
+  # 3. Construct Output
+  ggplot(retention, aes(x = day, y = pct_on)) +
+    geom_step(linewidth = 1, color = "midnightblue") +
+    # Weekly anchors
+    geom_point(data = filter(retention, day %% 7 == 0), size = 1.6) +
+    scale_y_continuous(
+      limits = c(0, 100),
+      breaks = seq(0, 100, 10),
+      # Fix: Use label_number with suffix instead of label_append
+      labels = label_number(suffix = "%")
+    ) +
+    scale_x_continuous(
+      limits = c(0, max_day),
+      breaks = seq(0, max_day, 14),
+      minor_breaks = seq(0, max_day, 7)
+    ) +
+    labs(
+      title = "Treatment retention over time (all starts pooled)",
+      subtitle = paste0("Cohort size N = ", cohort_n, "; day 0 = start of TPT"),
+      x = "Days since TPT start",
+      y = "On treatment (%)"
+    ) +
+    theme_light() +
+    theme(
+      plot.title = element_text(size = 11, face = "bold"),
+      axis.title = element_text(size = 10),
+      panel.grid.minor = element_line(color = "grey95")
+    )
+}
+
+
+#' Generate a summary flextable of TPT routine monitoring (1, 3, 4 months)
+#' @param data Dataframe. Defaults to treatment_data from the environment
+out_tab_tpt_monitoring_summary <- function(data = treatment_data) {
+  # 1. Configuration
+  timepoints <- c("1m", "3m", "4m")
+  pull_or_na <- function(df, col) {
+    if (col %in% names(df)) df[[col]] else NA
+  }
+
+  # 2. Build Summaries
+  tp_summaries <- map_dfr(timepoints, function(tp) {
+    any_col <- paste0("tpt_", tp, "_any_true")
+    exp_col <- paste0("tpt_", tp, "_expected")
+    done_col <- paste0("tpt_", tp, "_done")
+    sxres_col <- paste0("tpt_", tp, "_sxres")
+    out_col <- paste0("tpt_", tp, "_outcome")
+
+    df_tp <- data %>%
+      mutate(
+        .expected = as.logical(pull_or_na(data, exp_col)),
+        .done = as.logical(pull_or_na(data, done_col)),
+        .any_sx = as.logical(pull_or_na(data, any_col)),
+        .sxres = as.logical(pull_or_na(data, sxres_col)),
+        .outcome = as.character(pull_or_na(data, out_col))
+      )
+
+    expected_n <- sum(df_tp$.expected == TRUE, na.rm = TRUE)
+    done_n <- sum(df_tp$.done == TRUE, na.rm = TRUE)
+    df_done <- df_tp %>% filter(.done == TRUE)
+
+    any_n <- sum(df_done$.any_sx == TRUE, na.rm = TRUE)
+    no_sx_n <- sum(df_done$.any_sx == FALSE, na.rm = TRUE)
+    resolved_n <- sum(
+      df_done$.any_sx == TRUE & df_done$.sxres == TRUE,
+      na.rm = TRUE
+    )
+    not_res_n <- sum(
+      df_done$.any_sx == TRUE & df_done$.sxres == FALSE,
+      na.rm = TRUE
+    )
+    unknown_n <- sum(
+      df_done$.any_sx == TRUE & is.na(df_done$.sxres),
+      na.rm = TRUE
     )
 
-  table_final <- bind_rows(table_data, total_row)
+    complete_n <- sum(df_done$.outcome == "Complete TPT", na.rm = TRUE)
+    continue_n <- sum(df_done$.outcome == "Continue TPT", na.rm = TRUE)
+    suspend_n <- sum(df_done$.outcome == "Suspend TPT", na.rm = TRUE)
 
-  # 3. Styling
-  title_text <- paste0(
-    "Table: TPT Patients by Age and Sex (Generated ",
-    format(Sys.Date(), "%d %b %Y"),
-    ")"
-  )
+    tibble(
+      Group = c(
+        rep("Form status", 2),
+        rep("Side effects", 5),
+        rep("Outcome of review", 3)
+      ),
+      Row = c(
+        "Expected",
+        "Done",
+        "Any side effects",
+        "Resolved at assessment",
+        "Not resolved",
+        "Resolution unknown",
+        "No side effects",
+        "Complete TPT",
+        "Continue TPT",
+        "Suspend TPT"
+      ),
+      tp = tp,
+      n = c(
+        expected_n,
+        done_n,
+        any_n,
+        resolved_n,
+        not_res_n,
+        unknown_n,
+        no_sx_n,
+        complete_n,
+        continue_n,
+        suspend_n
+      )
+    )
+  })
 
-  ft <- table_final %>%
-    rename(`Age group` = age_cat) %>%
-    flextable() %>%
-    add_header_lines(values = title_text) %>%
+  # 3. Reshape
+  final_df <- tp_summaries %>%
+    mutate(tp = factor(tp, levels = timepoints)) %>%
+    pivot_wider(names_from = tp, values_from = n, values_fill = 0) %>%
+    rename(`1 month` = `1m`, `3 month` = `3m`, `4 month` = `4m`) %>%
+    mutate(
+      Group = factor(
+        Group,
+        levels = c("Form status", "Side effects", "Outcome of review")
+      ),
+      Row = factor(Row, levels = unique(Row))
+    ) %>%
+    arrange(Group, Row)
+
+  # 4. Styling
+  ft <- final_df %>%
+    flextable(col_keys = c("Group", "Row", "1 month", "3 month", "4 month")) %>%
+    add_header_lines(
+      values = paste0(
+        "Table: TPT Routine Monitoring Summary — ",
+        format(Sys.Date(), "%d %b %Y")
+      )
+    ) %>%
     theme_pearl() %>%
-    bold(i = ~ `Age group` == "Total", part = "body") %>%
-    colformat_int(j = c("M", "F", "Total"), big.mark = ",") %>%
-    width(j = "Age group", width = 1.5) %>%
+    bold(i = ~ Row %in% c("Done", "Any side effects", "Continue TPT")) %>%
+    merge_v(j = "Group") %>%
+    valign(j = "Group", valign = "top") %>%
+    width(j = 1:2, width = 1.8) %>%
     autofit()
 
   return(ft)
+}
+
+
+#' Plot monthly treatment follow-up and completion rates by start cohort
+#' @param data Dataframe. Defaults to monthly_long from the environment
+out_plot_tpt_followup_monthly <- function(data = monthly_long) {
+  # 1. Internal configuration: Programmatic Events
+  events_df <- get_pearl_events()
+
+  # 2. Indicator mapping
+  indicator_labels_tpt <- c(
+    "tpt_1m_done_pct" = "1-Month Review Done / Expected",
+    "tpt_3m_done_pct" = "3-Month Review Done / Expected",
+    "tpt_4m_done_pct" = "4-Month Review Done / Expected",
+    "tpt_outcome_assigned_pct" = "Outcome Assigned / Started",
+    "tpt_completed_pct" = "Completed / Started"
+  )
+
+  # 3. Data Preparation
+  plot_data <- data %>%
+    filter(Indicator %in% names(indicator_labels_tpt)) %>%
+    mutate(Indicator = recode(Indicator, !!!indicator_labels_tpt))
+
+  # 4. Dynamic Headroom Calculation
+  y_max <- suppressWarnings(max(plot_data$Value, na.rm = TRUE))
+  y_cap <- if (is.finite(y_max)) ceiling(y_max / 10) * 10 else 100
+  if (y_cap < 100) {
+    y_cap <- 100
+  } # ensure standard 0-100 range at minimum
+
+  # 5. Construct Output
+  ggplot(
+    plot_data,
+    aes(x = period_start, y = Value, color = Indicator, group = Indicator)
+  ) +
+    geom_line(linewidth = 0.9) +
+    geom_point(size = 1.8, na.rm = TRUE) +
+    scale_y_continuous(
+      labels = function(x) paste0(x, "%"),
+      limits = c(0, y_cap),
+      breaks = seq(0, y_cap, by = 10),
+      sec.axis = sec_axis(
+        ~.,
+        labels = function(x) paste0(x, "%"),
+        breaks = seq(0, y_cap, by = 10),
+        name = NULL
+      )
+    ) +
+    scale_x_date(date_breaks = "1 month", date_labels = "%b %Y") +
+    scale_color_viridis_d(option = "F", begin = 0.2, end = 0.8) +
+    labs(
+      title = "Monthly treatment follow-up & completion (start cohorts)",
+      x = "Month",
+      y = "Percent",
+      color = "Indicator"
+    ) +
+    theme_light() +
+    theme(
+      plot.title = element_text(size = 11),
+      axis.title = element_text(size = 10),
+      axis.text = element_text(size = 9),
+      legend.title = element_blank(),
+      legend.text = element_text(size = 9),
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      legend.position = "bottom",
+      axis.ticks.y.right = element_line()
+    ) +
+    # Annotated Events
+    geom_vline(
+      data = events_df,
+      aes(xintercept = as.numeric(period_start)),
+      linetype = "dashed",
+      color = "grey"
+    ) +
+    geom_text(
+      data = events_df,
+      aes(x = period_start + 3, y = y_cap * 0.95, label = event_label),
+      size = 3.3,
+      color = "black",
+      inherit.aes = FALSE,
+      hjust = 0,
+      vjust = 0
+    )
+}
+
+
+#' Plot prevalence of any symptoms during TPT by age group and sex
+#' @param data Dataframe. Defaults to treatment_data from the environment
+out_plot_tpt_symptoms_demographics <- function(data = treatment_data) {
+  # 1. Data Preparation: Aggregate symptoms across all monitoring timepoints
+  plot_data <- data %>%
+    filter(
+      tpt_sex %in% c("M", "F"),
+      !is.na(age_cat),
+      !is.na(tpt_start_date)
+    ) %>%
+    mutate(
+      # Standardize sex factor for consistent visual layout
+      tpt_sex = factor(
+        tpt_sex,
+        levels = c("F", "M"),
+        labels = c("Female", "Male")
+      ),
+      # Vectorized logic for 'any symptom' across the treatment journey
+      any_sx = coalesce(`1m_any_true`, FALSE) |
+        coalesce(`3m_any_true`, FALSE) |
+        coalesce(`4m_any_true`, FALSE) |
+        coalesce(`ae_any_true`, FALSE)
+    ) %>%
+    group_by(age_cat, tpt_sex) %>%
+    summarise(
+      # Calculate prevalence as a decimal for scales compatibility
+      prevalence = mean(any_sx, na.rm = TRUE),
+      n = n(),
+      .groups = "drop"
+    )
+
+  # 2. Dynamic Headroom Calculation (Rounded to nearest 5%)
+  y_max <- suppressWarnings(max(plot_data$prevalence, na.rm = TRUE))
+  y_cap <- if (is.finite(y_max)) max(0.05, ceiling(y_max * 20) / 20) else 0.05
+
+  # 3. Construct Output
+  ggplot(plot_data, aes(x = age_cat, y = prevalence, fill = tpt_sex)) +
+    geom_col(position = position_dodge(width = 0.7), width = 0.65) +
+    scale_y_continuous(
+      limits = c(0, y_cap),
+      labels = percent_format(accuracy = 1),
+      expand = expansion(mult = c(0, 0.1))
+    ) +
+    scale_fill_viridis_d(option = "F", begin = 0.2, end = 0.8, name = "Sex") +
+    labs(
+      title = "Symptoms during TPT monitoring by age group and sex",
+      subtitle = "Denominator: Individuals started on TPT with at least one follow-up record",
+      x = "Age group",
+      y = "Prevalence of any symptom (%)"
+    ) +
+    theme_light() +
+    theme(
+      plot.title = element_text(size = 11, face = "bold"),
+      axis.title = element_text(size = 10),
+      axis.text = element_text(size = 9),
+      legend.position = "bottom",
+      axis.text.x = element_text(angle = 45, hjust = 1)
+    )
 }
 
 
@@ -3419,123 +4024,6 @@ out_tab_tpt_symptoms_detail <- function(data = treatment_data) {
     merge_v(j = "Group") %>%
     valign(j = "Group", valign = "top") %>%
     width(j = 1:2, width = 2) %>%
-    autofit()
-
-  return(ft)
-}
-
-
-#' Generate a summary flextable of TPT routine monitoring (1, 3, 4 months)
-#' @param data Dataframe. Defaults to treatment_data from the environment
-out_tab_tpt_monitoring_summary <- function(data = treatment_data) {
-  # 1. Configuration
-  timepoints <- c("1m", "3m", "4m")
-  pull_or_na <- function(df, col) {
-    if (col %in% names(df)) df[[col]] else NA
-  }
-
-  # 2. Build Summaries
-  tp_summaries <- map_dfr(timepoints, function(tp) {
-    any_col <- paste0("tpt_", tp, "_any_true")
-    exp_col <- paste0("tpt_", tp, "_expected")
-    done_col <- paste0("tpt_", tp, "_done")
-    sxres_col <- paste0("tpt_", tp, "_sxres")
-    out_col <- paste0("tpt_", tp, "_outcome")
-
-    df_tp <- data %>%
-      mutate(
-        .expected = as.logical(pull_or_na(data, exp_col)),
-        .done = as.logical(pull_or_na(data, done_col)),
-        .any_sx = as.logical(pull_or_na(data, any_col)),
-        .sxres = as.logical(pull_or_na(data, sxres_col)),
-        .outcome = as.character(pull_or_na(data, out_col))
-      )
-
-    expected_n <- sum(df_tp$.expected == TRUE, na.rm = TRUE)
-    done_n <- sum(df_tp$.done == TRUE, na.rm = TRUE)
-    df_done <- df_tp %>% filter(.done == TRUE)
-
-    any_n <- sum(df_done$.any_sx == TRUE, na.rm = TRUE)
-    no_sx_n <- sum(df_done$.any_sx == FALSE, na.rm = TRUE)
-    resolved_n <- sum(
-      df_done$.any_sx == TRUE & df_done$.sxres == TRUE,
-      na.rm = TRUE
-    )
-    not_res_n <- sum(
-      df_done$.any_sx == TRUE & df_done$.sxres == FALSE,
-      na.rm = TRUE
-    )
-    unknown_n <- sum(
-      df_done$.any_sx == TRUE & is.na(df_done$.sxres),
-      na.rm = TRUE
-    )
-
-    complete_n <- sum(df_done$.outcome == "Complete TPT", na.rm = TRUE)
-    continue_n <- sum(df_done$.outcome == "Continue TPT", na.rm = TRUE)
-    suspend_n <- sum(df_done$.outcome == "Suspend TPT", na.rm = TRUE)
-
-    tibble(
-      Group = c(
-        rep("Form status", 2),
-        rep("Side effects", 5),
-        rep("Outcome of review", 3)
-      ),
-      Row = c(
-        "Expected",
-        "Done",
-        "Any side effects",
-        "Resolved at assessment",
-        "Not resolved",
-        "Resolution unknown",
-        "No side effects",
-        "Complete TPT",
-        "Continue TPT",
-        "Suspend TPT"
-      ),
-      tp = tp,
-      n = c(
-        expected_n,
-        done_n,
-        any_n,
-        resolved_n,
-        not_res_n,
-        unknown_n,
-        no_sx_n,
-        complete_n,
-        continue_n,
-        suspend_n
-      )
-    )
-  })
-
-  # 3. Reshape
-  final_df <- tp_summaries %>%
-    mutate(tp = factor(tp, levels = timepoints)) %>%
-    pivot_wider(names_from = tp, values_from = n, values_fill = 0) %>%
-    rename(`1 month` = `1m`, `3 month` = `3m`, `4 month` = `4m`) %>%
-    mutate(
-      Group = factor(
-        Group,
-        levels = c("Form status", "Side effects", "Outcome of review")
-      ),
-      Row = factor(Row, levels = unique(Row))
-    ) %>%
-    arrange(Group, Row)
-
-  # 4. Styling
-  ft <- final_df %>%
-    flextable(col_keys = c("Group", "Row", "1 month", "3 month", "4 month")) %>%
-    add_header_lines(
-      values = paste0(
-        "Table: TPT Routine Monitoring Summary — ",
-        format(Sys.Date(), "%d %b %Y")
-      )
-    ) %>%
-    theme_pearl() %>%
-    bold(i = ~ Row %in% c("Done", "Any side effects", "Continue TPT")) %>%
-    merge_v(j = "Group") %>%
-    valign(j = "Group", valign = "top") %>%
-    width(j = 1:2, width = 1.8) %>%
     autofit()
 
   return(ft)
@@ -3798,282 +4286,6 @@ out_tab_tpt_discontinued_ae_profile <- function(data = treatment_data) {
     italic(part = "footer") %>%
     width(j = 1, width = 3) %>%
     autofit()
-
-  return(ft)
-}
-
-
-#' Generate a flextable of TPT initiation status by clinical risk category (Landscape Optimized)
-#' @param data Dataframe. Defaults to screening_data from the environment
-out_tab_tpt_initiation_by_risk <- function(data = screening_data) {
-  # 1. Data Prep
-  sd_assess <- data %>%
-    filter(
-      tst_read_positive == "Positive TST",
-      tb_decision == "Ruled out TB" | ntp_diagnosis == "Ruled out"
-    ) %>%
-    mutate(
-      risk_cat = fct_explicit_na(
-        as.factor(prerx_riskcat),
-        na_level = "(Missing)"
-      ) |>
-        as.character(),
-      alt_available = coalesce(tptrf_alt_result, FALSE) | !is.na(calc_alt_last),
-      eligible = prerx_eligible == "Yes",
-      not_eligible = prerx_eligible == "No",
-      started = coalesce(prerx_start, FALSE),
-      not_started = !coalesce(prerx_start, FALSE)
-    )
-
-  risk_levels <- c(
-    "High",
-    "Moderate high",
-    "Moderate",
-    "Low",
-    "Not yet known",
-    "(Missing)"
-  )
-  sd_assess <- sd_assess %>%
-    mutate(
-      risk_cat = factor(
-        risk_cat,
-        levels = intersect(risk_levels, unique(c(risk_levels, risk_cat)))
-      )
-    )
-
-  tbl_init <- sd_assess %>%
-    group_by(risk_cat) %>%
-    summarise(
-      `ALT_avail` = sum(alt_available, na.rm = TRUE),
-      `ALT_not` = sum(!alt_available, na.rm = TRUE),
-      `Rec_eligible` = sum(eligible, na.rm = TRUE),
-      `Rec_not` = sum(not_eligible, na.rm = TRUE),
-      `Start_TPT` = sum(started, na.rm = TRUE),
-      `Not_started` = sum(not_started, na.rm = TRUE),
-      Total = n(),
-      .groups = "drop"
-    )
-
-  grand_total <- sum(tbl_init$Total, na.rm = TRUE)
-  tbl_init <- tbl_init %>%
-    mutate(
-      All_n = Total,
-      All_pct = if (grand_total > 0) round(100 * Total / grand_total, 1) else 0
-    )
-  grand_row <- tbl_init %>%
-    select(-All_pct) %>%
-    summarise(across(where(is.numeric), ~ sum(.x, na.rm = TRUE))) %>%
-    mutate(risk_cat = "Total", All_pct = 100)
-  tbl_final <- bind_rows(tbl_init, grand_row) %>%
-    mutate(ALT_sp = "", Ass_sp = "", Sta_sp = "") %>%
-    select(
-      risk_cat,
-      ALT_avail,
-      ALT_not,
-      ALT_sp,
-      Rec_eligible,
-      Rec_not,
-      Ass_sp,
-      Start_TPT,
-      Not_started,
-      Sta_sp,
-      All_n,
-      All_pct
-    )
-
-  # 2. Construction and Styling
-  ft <- tbl_final %>%
-    flextable() %>%
-    add_header_row(
-      values = c(
-        "",
-        "ALT result",
-        "",
-        "TPT assessment",
-        "",
-        "TPT status",
-        "",
-        "All"
-      ),
-      colwidths = c(1, 2, 1, 2, 1, 2, 1, 2)
-    ) %>%
-    add_header_lines(
-      values = "Table: TPT Initiation Status by Clinical Risk Category"
-    ) %>%
-    set_header_labels(
-      risk_cat = "Risk group",
-      ALT_avail = "Available",
-      ALT_not = "Not available",
-      ALT_sp = "",
-      Rec_eligible = "Eligible",
-      Rec_not = "Not eligible",
-      Ass_sp = "",
-      Start_TPT = "Started",
-      Not_started = "Not started",
-      Sta_sp = "",
-      All_n = "n",
-      All_pct = "%"
-    ) %>%
-    theme_pearl() %>%
-    bold(i = ~ risk_cat == "Total") %>%
-    colformat_double(j = "All_pct", digits = 1, suffix = "%") %>%
-    # LANDSCAPE OPTIMIZATION
-    width(j = 1, width = 1.5) %>%
-    width(j = c(2, 3, 5, 6, 8, 9, 11, 12), width = 0.85) %>% # Standard data columns
-    width(j = c(4, 7, 10), width = 0.15) %>% # Skinny spacers
-    set_table_properties(layout = "fixed")
-
-  return(ft)
-}
-
-
-# --- COMBINED TREATMENT OUTPUTS -----------------------------------------------
-
-#' Plot monthly treatment proportions from screening activity
-#' @param data Dataframe. Defaults to screening_data from the environment
-out_plot_treatment_proportions_monthly <- function(data = screening_data) {
-  # Define readable labels for calc_any_treatment
-  treatment_labels <- c(
-    "No treatment" = "No treatment",
-    "MDT" = "MDT",
-    "TBRx" = "TBRx",
-    "TPT" = "TPT",
-    "SDR" = "SDR"
-  )
-
-  # Custom colors (Yellow for MDT, Greens/Blues for TB/TPT, Purple for SDR)
-  custom_colors <- c(
-    "No treatment" = "lightgrey",
-    "MDT" = "#FDE725FF",
-    "TBRx" = "#35B779FF",
-    "TPT" = "#31688EFF",
-    "SDR" = "#440154FF"
-  )
-
-  # Data manipulation: use pre-calculated month_reg and coalesce for simplicity
-  plot_data <- data %>%
-    mutate(
-      calc_any_treatment = coalesce(
-        as.character(calc_any_treatment),
-        "No treatment"
-      ),
-      calc_any_treatment = factor(
-        calc_any_treatment,
-        levels = names(treatment_labels),
-        labels = treatment_labels
-      )
-    )
-
-  # Construct output: geom_bar(position = "fill") handles the % calculations
-  ggplot(plot_data, aes(x = month_reg, fill = calc_any_treatment)) +
-    geom_bar(position = "fill") +
-    theme_light() +
-    labs(
-      title = "Treatment Proportions by Month",
-      x = "Month",
-      y = "Proportion",
-      fill = "Treatment Type"
-    ) +
-    scale_y_continuous(labels = percent) +
-    scale_x_date(
-      date_breaks = "1 month",
-      date_labels = "%b %Y"
-    ) +
-    scale_fill_manual(values = custom_colors) +
-    theme(
-      axis.text.x = element_text(angle = 45, hjust = 1)
-    )
-}
-
-
-#' Generate a flextable of monthly treatment proportions (Counts and Row-wise %)
-#' @param data Dataframe. Defaults to screening_data from the environment
-out_tab_treatment_proportions_monthly <- function(data = screening_data) {
-  # 1. Configuration & Labels
-  treatment_labels <- c(
-    "SDR" = "SDR",
-    "TPT" = "TPT",
-    "TBRx" = "TBRx",
-    "MDT" = "MDT",
-    "No treatment" = "No treatment"
-  )
-
-  # 2. Data Aggregation
-  treatment_counts <- data %>%
-    mutate(
-      month = floor_date(en_date_visit, "month"),
-      calc_any_treatment = coalesce(
-        as.character(calc_any_treatment),
-        "No treatment"
-      ),
-      calc_any_treatment = factor(
-        calc_any_treatment,
-        levels = names(treatment_labels),
-        labels = treatment_labels
-      )
-    ) %>%
-    count(month, calc_any_treatment) %>%
-    pivot_longer(
-      cols = calc_any_treatment,
-      names_to = "Indicator_Key",
-      values_to = "Metric"
-    ) %>%
-    pivot_wider(names_from = Metric, values_from = n, values_fill = 0) %>%
-    arrange(month)
-
-  # 3. Add Calculated Columns
-  treatment_counts <- treatment_counts %>%
-    mutate(
-      `Any treatment` = SDR + TPT + TBRx + MDT,
-      Total = `Any treatment` + `No treatment`,
-      month_label = format(as.Date(month), "%b %Y")
-    ) %>%
-    select(
-      month_label,
-      SDR,
-      TPT,
-      TBRx,
-      MDT,
-      `Any treatment`,
-      `No treatment`,
-      Total
-    )
-
-  # Total Row
-  total_row <- treatment_counts %>%
-    summarise(across(where(is.numeric), sum)) %>%
-    mutate(month_label = "Total")
-
-  treatment_counts_final <- bind_rows(treatment_counts, total_row)
-
-  # 4. Compute Proportions
-  treatment_proportions <- treatment_counts_final %>%
-    mutate(across(
-      -c(month_label, Total),
-      ~ round(.x / ifelse(Total == 0, 1, Total) * 100, 1)
-    ))
-
-  treatment_final_table <- treatment_counts_final %>%
-    mutate(across(
-      -c(month_label, Total),
-      ~ paste0(.x, " (", treatment_proportions[[cur_column()]], "%)")
-    ))
-
-  # 5. Styling
-  ft <- treatment_final_table %>%
-    flextable() %>%
-    add_header_lines(
-      values = "Table: Treatment Proportions by Month (Participant Yield)"
-    ) %>%
-    set_header_labels(month_label = "Month") %>%
-    theme_pearl() %>%
-    bg(j = "Any treatment", bg = "#F9F9F9") %>%
-    bold(j = "Any treatment") %>%
-    bold(i = nrow(treatment_final_table), part = "body") %>%
-    # Landscape & Flow
-    width(j = 1, width = 1.2) %>%
-    width(j = -1, width = 1.0) %>%
-    set_table_properties(layout = "fixed")
 
   return(ft)
 }

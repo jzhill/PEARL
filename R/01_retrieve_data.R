@@ -27,13 +27,13 @@ tokens <- list(
 )
 
 report_ids <- list(
-  screening = 40643,  # https://redcap.sydney.edu.au/redcap_v14.3.14/DataExport/index.php?pid=19019&report_id=40643
-  household = 50913,  # https://redcap.sydney.edu.au/redcap_v14.3.14/DataExport/index.php?pid=19007&report_id=50913
-  treatment = 47495,  # https://redcap.sydney.edu.au/redcap_v14.3.14/DataExport/index.php?pid=19018&report_id=47495
-  ea = 54859  # https://redcap.sydney.edu.au/redcap_v14.3.14/DataExport/index.php?pid=24148&report_id=54859
+  screening = 40643, # https://redcap.sydney.edu.au/redcap_v14.3.14/DataExport/index.php?pid=19019&report_id=40643
+  household = 50913, # https://redcap.sydney.edu.au/redcap_v14.3.14/DataExport/index.php?pid=19007&report_id=50913
+  treatment = 47495, # https://redcap.sydney.edu.au/redcap_v14.3.14/DataExport/index.php?pid=19018&report_id=47495
+  ea = 54859 # https://redcap.sydney.edu.au/redcap_v14.3.14/DataExport/index.php?pid=24148&report_id=54859
 )
 
-datestamp <- format(Sys.time(), "%Y-%m-%d_%H%M")  
+datestamp <- format(Sys.time(), "%Y-%m-%d_%H%M")
 
 # Required directories for this script
 required_dirs <- c(
@@ -54,40 +54,52 @@ for (dir in required_dirs) {
 }
 
 # Check if API tokens are retrieved
-if (any(map_chr(tokens, ~ .x) == "")) {
-  stop("One or more API tokens not found in environment. Please check your .Renviron file.")
+if (any(map_chr(tokens, ~.x) == "")) {
+  stop(
+    "One or more API tokens not found in environment. Please check your .Renviron file."
+  )
 }
 
 # Loop through reports
 for (report in names(tokens)) {
-  
   message("Downloading ", report, " report...")
-  
+
   # Download the REDCap report
+  # guess_type = FALSE disables readr/vroom's per-column type guessing, which
+  # otherwise samples only the first ~1000 rows and can silently drop real
+  # values (as NA, or a garbled number) in mostly-blank text/radio fields
+  # whose rare non-blank responses fall outside that sample. Every column is
+  # imported as character here; explicit dictionary-driven typing happens
+  # later in 02_load_data.R's convert_field_types().
   report_data <- REDCapR::redcap_report(
     redcap_uri = uri,
     token = tokens[[report]],
     report_id = report_ids[[report]],
     raw_or_label_headers = "label",
     raw_or_label = "label",
+    guess_type = FALSE,
     verbose = TRUE,
     config_options = list(timeout = 100)
   )$data
-  
+
   # Save the report data
   file_path <- here("data-raw", report, paste0(report, "_", datestamp, ".csv"))
   write_csv(report_data, file_path)
   message("Saved to: ", file_path, "\n")
-  
+
   # Download the data dictionary
+  # redcap_metadata_read() has no guess_type/col_types argument, but already
+  # returns every column as character; the explicit coercion below is a
+  # cheap safeguard against that changing in a future REDCapR version.
   message("Downloading data dictionary for ", report, " project...")
   dd_data <- REDCapR::redcap_metadata_read(
     redcap_uri = uri,
     token = tokens[[report]],
     verbose = TRUE,
     config_options = list(timeout = 100)
-  )$data
-  
+  )$data %>%
+    mutate(across(everything(), as.character))
+
   # Save the data dictionary in the /dds/ folder
   dd_file_path <- here("data-raw/dds", paste0(report, "_dd.csv"))
   write_csv(dd_data, dd_file_path)

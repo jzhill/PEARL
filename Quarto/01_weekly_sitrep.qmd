@@ -15,6 +15,7 @@ execute:
 # Load necessary libraries
 library(here)
 library(flextable)
+library(qs)
 
 # Source scripts for data loading and tidying
 source(here("R", "02_load_data.R"))

@@ -6,10 +6,13 @@ token <- Sys.getenv("RCAPI_PEARL_screen")
 report_id <- 39575
 
 # Retrieve empty records from the report
+# guess_type = FALSE avoids readr's per-column type guessing (see
+# 01_retrieve_data.R); record_id is explicitly cast to integer below.
 empty_records <- REDCapR::redcap_report(
   redcap_uri = uri,
   token = token,
-  report_id = report_id
+  report_id = report_id,
+  guess_type = FALSE
 )$data
 
 # Filter records with record_id according to conditions (default set to 100000 to ensure explicit)
@@ -22,10 +25,12 @@ print(head(empty_records$record_id, 10))
 
 # Delete records and print result
 
-STOP_DELETION <- TRUE  # Change this to FALSE to enable deletion
+STOP_DELETION <- TRUE # Change this to FALSE to enable deletion
 
 if (STOP_DELETION) {
-  stop("Deletion is disabled by default. Set STOP_DELETION <- FALSE to proceed.")
+  stop(
+    "Deletion is disabled by default. Set STOP_DELETION <- FALSE to proceed."
+  )
 }
 
 delete_result <- REDCapR::redcap_delete(

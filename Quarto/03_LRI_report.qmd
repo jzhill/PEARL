@@ -1,0 +1,147 @@
+---
+title: "PEARL+ Leprosy Grant Periodic Report"
+subtitle: "Reporting Period: `r params$report_start` to `r params$report_end`"
+date: today
+format:
+  docx:
+    toc: false
+    number-sections: false
+    highlight-style: github
+    reference-doc: landscape_reference.docx
+execute:
+  echo: false
+  warning: false
+  message: false
+params:
+  report_start: "2026-01-01"
+  report_end: "2026-06-30"
+  full_project_interval: "quarter"
+---
+
+<!--
+Rendering this document (via the Render button or `quarto render`) produces
+Quarto/03_LRI_report.docx, next to this .qmd - Quarto has no way to redirect
+a standalone document's output to another folder via YAML. The companion
+xlsx data package (out_xlsx_lri_report(), in the final chunk below) always
+writes to reports/LRI_report/LRI_report_data.xlsx (overwritten each run).
+After rendering, manually copy the .docx alongside the .xlsx and datestamp
+both filenames for the period you're reporting on, e.g.:
+  reports/LRI_report/LRI_report_2026-Q1Q2.docx
+  reports/LRI_report/LRI_report_data_2026-Q1Q2.xlsx
+-->
+
+# Setup {visibility="hidden"}
+
+```{r}
+#| label: setup
+
+library(here)
+library(tidyverse)
+library(lubridate)
+library(flextable)
+library(qs)
+
+# Source functions and load latest data bundle
+source(here::here("R", "05_output_functions.R"))
+load_latest_tidy_data()
+
+report_start <- ymd(params$report_start)
+report_end <- ymd(params$report_end)
+```
+
+```{r}
+#| label: period-narrative-data
+
+period_screening <- screening_data %>%
+  filter(en_date_visit >= report_start, en_date_visit <= report_end)
+
+villages_screened <- period_screening %>%
+  distinct(village) %>%
+  filter(!is.na(village), village != "") %>%
+  arrange(village) %>%
+  pull(village)
+
+n_villages <- length(villages_screened)
+
+villages_text <- if (n_villages == 0) {
+  "no villages"
+} else if (n_villages == 1) {
+  villages_screened
+} else if (n_villages == 2) {
+  paste(villages_screened, collapse = " and ")
+} else {
+  paste0(
+    paste(villages_screened[-n_villages], collapse = ", "),
+    ", and ",
+    villages_screened[n_villages]
+  )
+}
+
+n_registered <- nrow(period_screening)
+
+n_tb_referred <- sum(period_screening$tb_decision == "Presumptive TB", na.rm = TRUE)
+n_tb_confirmed <- sum(period_screening$ntp_diagnosis == "Confirmed", na.rm = TRUE)
+
+n_tst_positive <- sum(period_screening$tst_read_positive == "Positive TST", na.rm = TRUE)
+n_tpt_started <- sum(period_screening$calc_any_treatment == "TPT", na.rm = TRUE)
+
+n_scabies <- sum(period_screening$lep_scabies == TRUE, na.rm = TRUE)
+
+n_hbv_referred <- sum(period_screening$prerx_hbv_1 == "Positive", na.rm = TRUE)
+
+n_lep_referred <- sum(period_screening$referred_nlp == TRUE, na.rm = TRUE)
+n_lep_confirmed <- sum(period_screening$nlp_diagnosis == "Confirmed", na.rm = TRUE)
+```
+
+## Reporting Period Summary
+
+During the reporting period (`r format(report_start, "%d %b %Y")` to
+`r format(report_end, "%d %b %Y")`), the PEARL+ team registered
+`r n_registered` participants and conducted screening in
+`r n_villages` `r if (n_villages == 1) "village" else "villages"`:
+`r villages_text`. Of those screened, `r n_lep_referred` were referred for
+further leprosy assessment, of whom `r n_lep_confirmed` were confirmed cases.
+
+The PEARL+ programme integrates leprosy screening with TB, TST, scabies, and
+Hepatitis B activities. In this same period, `r n_tb_referred` participants
+were referred for further TB assessment (`r n_tb_confirmed` confirmed),
+`r n_tst_positive` had a positive TST result (`r n_tpt_started` started TB
+preventive therapy), `r n_scabies` were identified with scabies, and
+`r n_hbv_referred` were referred for Hepatitis B follow-up.
+
+{{< pagebreak >}}
+
+## Leprosy Program Indicators (Full Project History)
+
+```{r}
+#| label: lep-indicators-table
+
+out_tab_lep_ind_time(interval = params$full_project_interval, font_size = 7, table_width = 9.5)
+```
+
+{{< pagebreak >}}
+
+## Treatment Proportions (Full Project History)
+
+```{r}
+#| label: treatment-proportions-plot
+#| fig-width: 9.5
+#| fig-height: 5.5
+#| fig-align: center
+
+out_plot_treatment_proportions_time(interval = params$full_project_interval)
+```
+
+{{< pagebreak >}}
+
+```{r}
+#| label: treatment-proportions-table
+
+out_tab_treatment_proportions_time(interval = params$full_project_interval)
+```
+
+```{r}
+#| label: xlsx-export
+
+out_xlsx_lri_report(interval = params$full_project_interval)
+```
