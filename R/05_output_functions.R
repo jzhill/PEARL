@@ -31,6 +31,13 @@ library(openxlsx)
 # Nothing below has been fixed yet - annotations only.
 #
 # 1. SCALING PARAMETERS (Rule 1 above is not yet consistently applied):
+#    IMPLEMENT ON DEMAND ONLY. Do not batch-apply this across the lists
+#    below. Add 'base_size' / 'font_size' / 'table_width' to a specific
+#    function only when an actual report needs that function resized (e.g.
+#    to fit a print width or a slide) - not pre-emptively, not for
+#    consistency alone. Pattern to copy: out_plot_weekly_quality for
+#    base_size; out_tab_lep_ind_time or out_tab_project_weekly_review for
+#    font_size/table_width.
 #    - Missing 'base_size' (plots hardcode font/theme sizes instead):
 #      out_plot_age_pyramid, out_plot_betio_coverage_map, out_plot_betio_household_points,
 #      out_plot_betio_screening_map, out_plot_ea_coverage, out_plot_lep_yield_demographics,
@@ -38,7 +45,7 @@ library(openxlsx)
 #      out_plot_tb_yield_demographics, out_plot_tpt_age_pyramid, out_plot_tpt_assessment_gaps,
 #      out_plot_tpt_cascade, out_plot_tpt_followup_monthly, out_plot_tpt_ineligibility_reasons,
 #      out_plot_tpt_outcome_proportions, out_plot_tpt_retention_step, out_plot_tpt_risk_cascade,
-#      out_plot_tpt_symptoms_demographics, out_plot_treatment_proportions_monthly,
+#      out_plot_tpt_symptoms_demographics, out_plot_treatment_proportions_time,
 #      out_plot_tst_positivity_by_age, out_plot_tst_proportions_6m, out_plot_tst_thresholds_age,
 #      out_plot_tst_yield_demographics, out_plot_village_cumulative_coverage,
 #      out_plot_village_cumulative_eligible_coverage, out_plot_village_cumulative_screening,
@@ -51,7 +58,7 @@ library(openxlsx)
 #      out_tab_tb_yield_efficiency, out_tab_tpt_demographics_count, out_tab_tpt_discontinued_ae_profile,
 #      out_tab_tpt_initiation_by_risk, out_tab_tpt_monitoring_summary, out_tab_tpt_outcomes_by_symptoms,
 #      out_tab_tpt_outcomes_monthly, out_tab_tpt_symptoms_count, out_tab_tpt_symptoms_detail,
-#      out_tab_treatment_proportions_monthly, out_tab_tst_yield_demographics_table
+#      out_tab_treatment_proportions_time, out_tab_tst_yield_demographics_table
 #      (out_tab_modelling_inputs_xlsx is exempt - it exports xlsx, not a flextable)
 #    - out_tab_geo_indicators has 'font_size' but no 'table_width'.
 #    - Already-compliant functions to use as reference: out_plot_weekly_quality,
