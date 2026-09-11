@@ -14,7 +14,7 @@ library(here)
 library(flextable)
 library(officer)
 library(webshot2) # Required for saving flextables as PNG
-library(qs)
+library(qs2)
 
 # --- DATA INFRASTRUCTURE ------------------------------------------------------
 

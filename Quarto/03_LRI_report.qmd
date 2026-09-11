@@ -39,7 +39,7 @@ library(here)
 library(tidyverse)
 library(lubridate)
 library(flextable)
-library(qs)
+library(qs2)
 
 # Source functions and load latest data bundle
 source(here::here("R", "05_output_functions.R"))

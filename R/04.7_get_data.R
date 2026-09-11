@@ -4,18 +4,18 @@
 # Usage: source("R/analysis_data.R"); get_analysis_data()
 
 library(here)
-library(qs)
+library(qs2)
 
 ## Path helpers ---------------------------------------------------------------
 
 tidy_data_dir <- file.path(here("data-processed", "tidy-data-bundles"))
-tidy_data_latest_path <- file.path(tidy_data_dir, "tidy_data_latest.qs")
+tidy_data_latest_path <- file.path(tidy_data_dir, "tidy_data_latest.qs2")
 
 
 ## Function to load latest tidy data bundle ------------------------------------------------------
 
 # Load a tidy data bundle saved by 03_tidy_data.R. This does not build the data;
-# run 02_* and 03_* first to create tidy_data_YYYY-MM-DD.qs and tidy_data_latest.qs.
+# run 02_* and 03_* first to create tidy_data_YYYY-MM-DD.qs2 and tidy_data_latest.qs2.
 
 get_tidy_data <- function(path = tidy_data_latest_path,
                           dir = tidy_data_dir,
@@ -33,7 +33,7 @@ get_tidy_data <- function(path = tidy_data_latest_path,
     message("Loading tidy data bundle from ", path)
   }
   
-  qread(path)
+  qs_read(path)
 }
 
 ## Function to attach latest tidy data bundle into calling environment --------------------------------
