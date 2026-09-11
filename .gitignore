@@ -62,3 +62,10 @@ figures/*
 
 # reports are generated and saved locally
 reports/*
+
+# rendered report outputs (docx/xlsx/pptx/pdf) are generated, not source -
+# this also catches Quarto docs rendering into the tracked Quarto/ folder
+*.docx
+*.xlsx
+*.pptx
+*.pdf

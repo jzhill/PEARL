@@ -105,9 +105,9 @@ library(openxlsx)
 #      - out_plot_tpt_assessment_gaps, out_plot_tpt_cascade, out_plot_tpt_ineligibility_reasons,
 #        out_plot_tpt_risk_cascade: bare scale_fill_viridis_d() (full 0-1 range, default option)
 #
-# 5. MINOR DEAD CODE: two commented-out lines inside
-#    out_plot_village_cumulative_eligible_coverage() (search "first_screen_date" join) look
-#    superseded by the join already present in village_data_cum; flagged inline there too.
+# (Item 5, minor dead code in out_plot_village_cumulative_eligible_coverage, resolved
+#  2026-09-11: confirmed first_screen_date is already joined upstream in village_data_cum
+#  (03_tidy_data.R), so the commented-out select/left_join was removed.)
 # ----------------------------------------------------------------------------------
 
 # --- DATA INFRASTRUCTURE ------------------------------------------------------
@@ -1148,12 +1148,6 @@ out_plot_village_cumulative_eligible_coverage <- function(
   # 2. Data manipulation
   plot_data <- data %>%
     filter(village_gte_100 %in% active_villages) %>%
-    # Ensure we use the most reliable first_screen_date by joining from v_data
-    # TODO: these two lines look dead - village_data_cum already carries
-    # first_screen_date via its own join, so this select/left_join appears superseded.
-    # Leaving as-is (commented) pending confirmation before deleting.
-    #    select(-any_of("first_screen_date")) %>%
-    #    left_join(v_data %>% select(village, first_screen_date), by = "village") %>%
     filter(week_reg >= first_screen_date)
 
   if (nrow(plot_data) == 0) {
