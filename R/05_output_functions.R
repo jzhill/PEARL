@@ -58,17 +58,26 @@ library(openxlsx)
 #      out_tab_team_weekly_review, out_tab_project_weekly_review, out_tab_lep_ind_time,
 #      out_tab_lep_village.
 #
-# 2. DEFENSIVE HANDLING OF EMPTY / ZERO-ROW INPUT: Resolved 2026-09-11.
-#    All output functions except out_tab_modelling_inputs_xlsx (an xlsx export
-#    utility, not a flextable/plot; also exempt from item 1) now guard against
-#    an empty/zero-row result before plotting or building a flextable: an
-#    early `if (nrow(...) == 0) return(...)` right before construction, using
-#    a placeholder flextable(data.frame(Msg = "No Data Available")) for
-#    tables and a blank ggplot() + annotate("text", ..., "No data available")
-#    + theme_void() for plots. Applied uniformly rather than the earlier
-#    per-chart dummy-data substitution (which only the two former reference
-#    examples used) so behaviour is consistent regardless of a given chart's
-#    internal data shape.
+# 2. DEFENSIVE HANDLING OF EMPTY / ZERO-ROW INPUT: Resolved 2026-09-11,
+#    revised 2026-09-11 to stop masking legitimate zero results.
+#    Two shared helpers (no_data_flextable(), no_data_plot() - see DATA
+#    INFRASTRUCTURE section, right after theme_pearl()) return a placeholder
+#    "No Data Available" flextable or blank-plot when a function's RAW input
+#    is empty, or when emptiness would otherwise crash the function (an
+#    empty date vector's max()/min() losing its Date class and breaking
+#    downstream date arithmetic, or pivot_wider() failing to create columns
+#    that a later flextable(col_keys=...)/rename() references by fixed
+#    name). 34 of the ~50 functions call one of these guards for exactly
+#    that reason - it means "no data was supplied", never "zero of
+#    something happened".
+#    The other ~16 functions filter/aggregate down to a specific real-world
+#    count (e.g. "patients who discontinued TPT", "people TPT-ineligible",
+#    a time-windowed cohort) that can legitimately BE zero while the raw
+#    input is healthy - "0 patients discontinued" is a real, good result,
+#    not missing data. These deliberately have no guard (or, for the two
+#    original reference pie charts, keep their pre-existing dummy-data
+#    substitution) so a genuine zero still renders as an honest table/chart
+#    instead of a generic no-data message.
 #
 # 3. INCONSISTENT TIME-WINDOW PARAMETER CONVENTIONS:
 #    Different functions name "how much history to show" differently:
@@ -117,6 +126,20 @@ theme_pearl <- function(x) {
     border(part = "all", border = fp_border(color = "black", width = 0.5)) %>%
     border_outer(border = fp_border(color = "black", width = 1.2)) %>%
     set_table_properties(align = "center", layout = "fixed")
+}
+
+
+#' Internal helper: placeholder flextable shown when an output function has no rows to work with
+no_data_flextable <- function() {
+  flextable(data.frame(Msg = "No Data Available"))
+}
+
+
+#' Internal helper: placeholder blank plot shown when an output function has no rows to work with
+no_data_plot <- function() {
+  ggplot() +
+    annotate("text", x = 0, y = 0, label = "No data available") +
+    theme_void()
 }
 
 
@@ -240,7 +263,7 @@ get_pearl_events <- function() {
 #' @param target_week Date. Optional; defaults to the latest week in data
 out_tab_activity_summary <- function(data = weekly_data, target_week = NULL) {
   if (nrow(data) == 0) {
-    return(flextable(data.frame(Msg = "No Data Available")))
+    return(no_data_flextable())
   }
 
   # 1. Determine reporting dates
@@ -341,7 +364,7 @@ out_tab_team_weekly_review <- function(
     select(team, any_of(ind_keys))
 
   if (nrow(report_week) == 0) {
-    return(flextable(data.frame(Msg = "No Data Available")))
+    return(no_data_flextable())
   }
 
   all_row <- weekly_df %>%
@@ -423,7 +446,7 @@ out_tab_project_weekly_review <- function(
   table_width = NULL
 ) {
   if (nrow(data) == 0) {
-    return(flextable(data.frame(Msg = "No Data Available")))
+    return(no_data_flextable())
   }
 
   if (is.null(end_date)) {
@@ -517,7 +540,7 @@ out_tab_geo_indicators <- function(
   font_size = 8
 ) {
   if (nrow(data) == 0) {
-    return(flextable(data.frame(Msg = "No Data Available")))
+    return(no_data_flextable())
   }
 
   # 1. Tidy Data Selection & Transposition
@@ -612,11 +635,7 @@ out_tab_geo_indicators <- function(
 #' @param data Dataframe. Defaults to weekly_data from the environment
 out_plot_weekly_activity <- function(data = weekly_data) {
   if (nrow(data) == 0) {
-    return(
-      ggplot() +
-        annotate("text", x = 0, y = 0, label = "No data available") +
-        theme_void()
-    )
+    return(no_data_plot())
   }
 
   ggplot(data, aes(x = period_start)) +
@@ -709,14 +728,6 @@ out_plot_weekly_quality <- function(
     filter(period_start >= start_date & period_start <= end_date) %>%
     filter(Indicator %in% dict$Indicator_Key) %>%
     left_join(dict, by = c("Indicator" = "Indicator_Key"))
-
-  if (nrow(plot_data) == 0) {
-    return(
-      ggplot() +
-        annotate("text", x = 0, y = 0, label = "No data available") +
-        theme_void()
-    )
-  }
 
   p1_data <- plot_data %>% filter(Indicator %in% pct_keys)
   p2_data <- plot_data %>% filter(Indicator %in% count_keys)
@@ -841,14 +852,6 @@ out_plot_monthly_quality_indicators <- function(data = monthly_long) {
     filter(Indicator %in% names(indicator_labels_followup)) %>%
     mutate(Indicator = recode(Indicator, !!!indicator_labels_followup))
 
-  if (nrow(plot_data) == 0) {
-    return(
-      ggplot() +
-        annotate("text", x = 0, y = 0, label = "No data available") +
-        theme_void()
-    )
-  }
-
   # 4. Dynamic Headroom Calculation
   y_max <- suppressWarnings(max(plot_data$Value, na.rm = TRUE))
   y_cap <- if (is.finite(y_max) && y_max > 0) ceiling(y_max / 10) * 10 else 100
@@ -920,14 +923,6 @@ out_plot_age_pyramid <- function(data = screening_data) {
     filter(en_sex %in% c("M", "F"), !is.na(age_cat)) %>%
     mutate(en_sex = factor(en_sex, levels = c("M", "F")))
 
-  if (nrow(plot_data) == 0) {
-    return(
-      ggplot() +
-        annotate("text", x = 0, y = 0, label = "No data available") +
-        theme_void()
-    )
-  }
-
   # Construct output
   age_pyramid(plot_data, age_group = "age_cat", split_by = "en_sex") +
     scale_fill_viridis_d(option = "F", begin = 0.4, end = 0.6) +
@@ -950,14 +945,6 @@ out_plot_ea_coverage <- function(data = ea_data) {
   plot_data <- data %>%
     filter(pop_elig_new > 50) %>%
     mutate(record_id = fct_reorder(record_id, date_enum_new, .desc = FALSE))
-
-  if (nrow(plot_data) == 0) {
-    return(
-      ggplot() +
-        annotate("text", x = 0, y = 0, label = "No data available") +
-        theme_void()
-    )
-  }
 
   # Calculate y-axis limit
   max_y <- max(plot_data$prop_reg_screen_hh, na.rm = TRUE)
@@ -1002,14 +989,6 @@ out_plot_village_cumulative_coverage <- function(data = village_data_cum) {
     # Drop any rows before that village actually started to avoid long flat starts
     filter(week_reg >= first_screen_date)
 
-  if (nrow(plot_data) == 0) {
-    return(
-      ggplot() +
-        annotate("text", x = 0, y = 0, label = "No data available") +
-        theme_void()
-    )
-  }
-
   # Construct output
   ggplot(
     plot_data,
@@ -1049,11 +1028,7 @@ out_plot_village_cumulative_screening <- function(
   max_y = 30000
 ) {
   if (nrow(data) == 0) {
-    return(
-      ggplot() +
-        annotate("text", x = 0, y = 0, label = "No data available") +
-        theme_void()
-    )
+    return(no_data_plot())
   }
 
   ggplot(data, aes(x = week_reg, y = cum_reg, fill = village_gte_100)) +
@@ -1085,11 +1060,7 @@ out_plot_village_cumulative_screening <- function(
 #' @param data sf object. Defaults to layer_betio_ea_3832 from the environment
 out_plot_betio_screening_map <- function(data = layer_betio_ea_3832) {
   if (nrow(data) == 0) {
-    return(
-      ggplot() +
-        annotate("text", x = 0, y = 0, label = "No data available") +
-        theme_void()
-    )
+    return(no_data_plot())
   }
 
   # Data manipulation: 1:1 match of the provided logic
@@ -1123,11 +1094,7 @@ out_plot_betio_screening_map <- function(data = layer_betio_ea_3832) {
 #' @param data sf object. Defaults to layer_betio_ea_3832 from the environment
 out_plot_betio_coverage_map <- function(data = layer_betio_ea_3832) {
   if (nrow(data) == 0) {
-    return(
-      ggplot() +
-        annotate("text", x = 0, y = 0, label = "No data available") +
-        theme_void()
-    )
+    return(no_data_plot())
   }
 
   # Data manipulation
@@ -1190,11 +1157,7 @@ out_plot_village_cumulative_eligible_coverage <- function(
     filter(week_reg >= first_screen_date)
 
   if (nrow(plot_data) == 0) {
-    return(
-      ggplot() +
-        annotate("text", x = 0, y = 0, label = "No data available") +
-        theme_void()
-    )
+    return(no_data_plot())
   }
 
   # Define axis ranges dynamically
@@ -1249,11 +1212,7 @@ out_plot_betio_household_points <- function(
   hh_layer = layer_hh_betio_3832
 ) {
   if (nrow(hh_layer) == 0) {
-    return(
-      ggplot() +
-        annotate("text", x = 0, y = 0, label = "No data available") +
-        theme_void()
-    )
+    return(no_data_plot())
   }
 
   ggplot() +
@@ -1289,11 +1248,7 @@ out_plot_betio_household_points <- function(
 #' @param data Dataframe. Defaults to screening_data from the environment
 out_plot_tb_outcome_proportions_6m <- function(data = screening_data) {
   if (nrow(data) == 0) {
-    return(
-      ggplot() +
-        annotate("text", x = 0, y = 0, label = "No data available") +
-        theme_void()
-    )
+    return(no_data_plot())
   }
 
   # Data manipulation: Filter for last 6 months and handle factors
@@ -1345,11 +1300,7 @@ out_plot_tb_outcome_proportions_6m <- function(data = screening_data) {
 #' @param data Dataframe. Defaults to screening_data from the environment
 out_plot_tst_proportions_6m <- function(data = screening_data) {
   if (nrow(data) == 0) {
-    return(
-      ggplot() +
-        annotate("text", x = 0, y = 0, label = "No data available") +
-        theme_void()
-    )
+    return(no_data_plot())
   }
 
   # Data manipulation: Filter for 6-month window and handle factor levels
@@ -1430,14 +1381,6 @@ out_plot_tb_yield_demographics <- function(data = screening_data) {
       )
     )
 
-  if (nrow(tb_plot_df) == 0) {
-    return(
-      ggplot() +
-        annotate("text", x = 0, y = 0, label = "No data available") +
-        theme_void()
-    )
-  }
-
   # 2. Dynamic Headroom Calculation
   # We work in decimals (0.15) rather than integers (15) for the cap
   y_max <- suppressWarnings(max(tb_plot_df$proportion, na.rm = TRUE))
@@ -1491,14 +1434,6 @@ out_plot_tst_positivity_by_age <- function(data = screening_data) {
       .groups = "drop"
     )
 
-  if (nrow(tst_summary) == 0) {
-    return(
-      ggplot() +
-        annotate("text", x = 0, y = 0, label = "No data available") +
-        theme_void()
-    )
-  }
-
   # Construct output
   ggplot(tst_summary, aes(x = age_cat, y = prevalence)) +
     geom_col(fill = "steelblue", alpha = 0.8, width = 0.6) +
@@ -1526,11 +1461,7 @@ out_plot_tst_positivity_by_age <- function(data = screening_data) {
 #' @param data Dataframe. Defaults to screening_data from the environment
 out_plot_tst_thresholds_age <- function(data = screening_data) {
   if (nrow(data) == 0) {
-    return(
-      ggplot() +
-        annotate("text", x = 0, y = 0, label = "No data available") +
-        theme_void()
-    )
+    return(no_data_plot())
   }
 
   # 1. Prep data: calculate proportions in each age category
@@ -1627,14 +1558,6 @@ out_plot_tst_yield_demographics <- function(data = screening_data) {
       )
     )
 
-  if (nrow(tst_plot_df) == 0) {
-    return(
-      ggplot() +
-        annotate("text", x = 0, y = 0, label = "No data available") +
-        theme_void()
-    )
-  }
-
   # 2. Dynamic Headroom Calculation (Rounded to nearest 5%)
   y_max <- suppressWarnings(max(tst_plot_df$prevalence, na.rm = TRUE))
   y_cap <- if (is.finite(y_max)) max(0.05, ceiling(y_max * 20) / 20) else 0.05
@@ -1691,7 +1614,7 @@ out_tab_tst_yield_demographics_table <- function(data = screening_data) {
     arrange(age_cat)
 
   if (nrow(tst_summary_wide) == 0) {
-    return(flextable(data.frame(Msg = "No Data Available")))
+    return(no_data_flextable())
   }
 
   col_keys <- c(
@@ -1749,7 +1672,7 @@ out_tab_tst_yield_demographics_table <- function(data = screening_data) {
 #' @param data Dataframe. Defaults to screening_data from the environment
 out_tab_sputum_cascade <- function(data = screening_data) {
   if (nrow(data) == 0) {
-    return(flextable(data.frame(Msg = "No Data Available")))
+    return(no_data_flextable())
   }
 
   xpert_any <- c("Not detected", "Trace detected", "Detected")
@@ -1810,7 +1733,7 @@ out_tab_sputum_cascade <- function(data = screening_data) {
 #' @param data Dataframe. Defaults to screening_data from the environment
 out_tab_tb_referral_outcomes <- function(data = screening_data) {
   if (nrow(data) == 0) {
-    return(flextable(data.frame(Msg = "No Data Available")))
+    return(no_data_flextable())
   }
 
   tb_ref_raw <- data %>%
@@ -1887,7 +1810,7 @@ out_tab_tb_referral_outcomes <- function(data = screening_data) {
 #' @param data Dataframe. Defaults to screening_data from the environment
 out_tab_tb_yield_efficiency <- function(data = screening_data) {
   if (nrow(data) == 0) {
-    return(flextable(data.frame(Msg = "No Data Available")))
+    return(no_data_flextable())
   }
 
   xr_positive <- c("1 cw TB", "2 CAD 50 plus", "3 Uncertain")
@@ -1988,7 +1911,7 @@ out_tab_tb_yield_efficiency <- function(data = screening_data) {
 #' @param data Dataframe. Defaults to screening_data from the environment
 out_tab_tb_yield_demographics_table <- function(data = screening_data) {
   if (nrow(data) == 0) {
-    return(flextable(data.frame(Msg = "No Data Available")))
+    return(no_data_flextable())
   }
 
   tb_summary_wide <- data %>%
@@ -2116,14 +2039,6 @@ out_plot_lep_yield_demographics <- function(data = screening_data) {
       )
     )
 
-  if (nrow(lep_plot_df) == 0) {
-    return(
-      ggplot() +
-        annotate("text", x = 0, y = 0, label = "No data available") +
-        theme_void()
-    )
-  }
-
   # 2. Dynamic Headroom Calculation
   # For Leprosy, we use a tighter rounding (to the nearest 5%)
   y_max <- suppressWarnings(max(lep_plot_df$proportion, na.rm = TRUE))
@@ -2180,11 +2095,7 @@ out_plot_treatment_proportions_time <- function(
   interval <- match.arg(interval)
 
   if (nrow(data) == 0) {
-    return(
-      ggplot() +
-        annotate("text", x = 0, y = 0, label = "No data available") +
-        theme_void()
-    )
+    return(no_data_plot())
   }
 
   # Define readable labels for calc_any_treatment
@@ -2300,7 +2211,7 @@ out_tab_lep_yield_demographics_table <- function(data = screening_data) {
     arrange(age_cat)
 
   if (nrow(lep_summary_wide) == 0) {
-    return(flextable(data.frame(Msg = "No Data Available")))
+    return(no_data_flextable())
   }
 
   col_keys <- c(
@@ -2366,7 +2277,7 @@ out_tab_lep_yield_demographics_table <- function(data = screening_data) {
 #' @param data Dataframe. Defaults to screening_data from the environment
 out_tab_lep_referral_outcomes <- function(data = screening_data) {
   if (nrow(data) == 0) {
-    return(flextable(data.frame(Msg = "No Data Available")))
+    return(no_data_flextable())
   }
 
   lep_ref_raw <- data %>%
@@ -2479,7 +2390,7 @@ out_tab_lep_ind_time <- function(
     if (return_data) {
       return(tibble())
     }
-    return(flextable(data.frame(Msg = "No Data Available")))
+    return(no_data_flextable())
   }
 
   # 1. Date Range Setup
@@ -2681,7 +2592,7 @@ out_tab_lep_village <- function(
   table_width = NULL
 ) {
   if (nrow(data_scr) == 0) {
-    return(flextable(data.frame(Msg = "No Data Available")))
+    return(no_data_flextable())
   }
 
   # 1. Date/Year Filtering Setup
@@ -2850,7 +2761,7 @@ out_tab_treatment_proportions_time <- function(
     if (return_data) {
       return(tibble())
     }
-    return(flextable(data.frame(Msg = "No Data Available")))
+    return(no_data_flextable())
   }
 
   # 1. Configuration & Labels
@@ -3044,7 +2955,7 @@ out_tab_scabies_prevalence_demographics <- function(data = screening_data) {
     mutate(age_cat = fct_explicit_na(factor(age_cat), na_level = "Missing"))
 
   if (nrow(scabies_data) == 0) {
-    return(flextable(data.frame(Msg = "No Data Available")))
+    return(no_data_flextable())
   }
 
   scabies_wide <- scabies_data %>%
@@ -3114,11 +3025,7 @@ out_plot_tpt_cascade <- function(
   weeks_lookback = 16
 ) {
   if (nrow(s_data) == 0 && nrow(t_data) == 0) {
-    return(
-      ggplot() +
-        annotate("text", x = 0, y = 0, label = "No data available") +
-        theme_void()
-    )
+    return(no_data_plot())
   }
 
   # Define the lookback date for the "Expected Outcome" cohort
@@ -3224,11 +3131,7 @@ out_plot_tpt_cascade <- function(
 #' @param data Dataframe. Defaults to screening_data from the environment
 out_plot_tpt_risk_cascade <- function(data = screening_data) {
   if (nrow(data) == 0) {
-    return(
-      ggplot() +
-        annotate("text", x = 0, y = 0, label = "No data available") +
-        theme_void()
-    )
+    return(no_data_plot())
   }
 
   # 1. Data Preparation: Aggregate counts for each stage
@@ -3312,12 +3215,9 @@ out_plot_tpt_ineligibility_reasons <- function(data = screening_data) {
     rename(reason = tpt_inelig_reason) %>%
     arrange(desc(n))
 
+  # Defensive check for empty datasets
   if (nrow(tpt_ineligible) == 0) {
-    return(
-      ggplot() +
-        annotate("text", x = 0, y = 0, label = "No data available") +
-        theme_void()
-    )
+    tpt_ineligible <- tibble(reason = "No data", n = 1L)
   }
 
   # Construct output
@@ -3351,12 +3251,9 @@ out_plot_tpt_assessment_gaps <- function(data = screening_data) {
     rename(reason = tpt_not_assessed_reason) %>%
     arrange(desc(n))
 
+  # Handle empty case to avoid a blank plot error
   if (nrow(tpt_not_assessed) == 0) {
-    return(
-      ggplot() +
-        annotate("text", x = 0, y = 0, label = "No data available") +
-        theme_void()
-    )
+    tpt_not_assessed <- tibble(reason = "No data", n = 1L)
   }
 
   # Construct output
@@ -3384,7 +3281,7 @@ out_plot_tpt_assessment_gaps <- function(data = screening_data) {
 #' @param data Dataframe. Defaults to screening_data from the environment
 out_tab_tpt_initiation_by_risk <- function(data = screening_data) {
   if (nrow(data) == 0) {
-    return(flextable(data.frame(Msg = "No Data Available")))
+    return(no_data_flextable())
   }
 
   # 1. Data Prep
@@ -3524,14 +3421,6 @@ out_plot_tpt_age_pyramid <- function(data = treatment_data) {
       )
     )
 
-  if (nrow(plot_data) == 0) {
-    return(
-      ggplot() +
-        annotate("text", x = 0, y = 0, label = "No data available") +
-        theme_void()
-    )
-  }
-
   # 2. Construct Output using apyramid::age_pyramid
   age_pyramid(
     data = plot_data,
@@ -3557,7 +3446,7 @@ out_plot_tpt_age_pyramid <- function(data = treatment_data) {
 #' @param data Dataframe. Defaults to treatment_data from the environment
 out_tab_tpt_demographics_count <- function(data = treatment_data) {
   if (nrow(data) == 0) {
-    return(flextable(data.frame(Msg = "No Data Available")))
+    return(no_data_flextable())
   }
 
   # 1. Data Preparation
@@ -3612,11 +3501,7 @@ out_tab_tpt_demographics_count <- function(data = treatment_data) {
 #' @param data Dataframe. Defaults to treatment_data from the environment
 out_plot_tpt_outcome_proportions <- function(data = treatment_data) {
   if (nrow(data) == 0) {
-    return(
-      ggplot() +
-        annotate("text", x = 0, y = 0, label = "No data available") +
-        theme_void()
-    )
+    return(no_data_plot())
   }
 
   # Define labels for the factor mapping
@@ -3689,10 +3574,6 @@ out_tab_tpt_outcomes_monthly <- function(
 
   tpt_filtered <- data %>%
     filter(!is.na(tpt_start_date), tpt_start_date < cutoff_date)
-
-  if (nrow(tpt_filtered) == 0) {
-    return(flextable(data.frame(Msg = "No Data Available")))
-  }
 
   # 3. Data Aggregation (Long to Wide)
   tpt_counts <- tpt_filtered %>%
@@ -3780,23 +3661,18 @@ out_plot_tpt_retention_step <- function(data = treatment_data, max_day = 168) {
     mutate(dur = if_else(is.na(dur) | dur < 0, 0L, dur))
 
   cohort_n <- nrow(td_cohort)
-
-  if (cohort_n == 0) {
-    return(
-      ggplot() +
-        annotate("text", x = 0, y = 0, label = "No data available") +
-        theme_void()
-    )
-  }
-
   days_vec <- 0:max_day
 
   # 2. Optimized Vectorization
-  retention <- tibble(
-    day = days_vec,
-    on_n = rowSums(outer(days_vec, td_cohort$dur, "<="))
-  ) %>%
-    mutate(pct_on = (on_n / cohort_n) * 100)
+  if (cohort_n == 0) {
+    retention <- tibble(day = days_vec, on_n = 0L, pct_on = NA_real_)
+  } else {
+    retention <- tibble(
+      day = days_vec,
+      on_n = rowSums(outer(days_vec, td_cohort$dur, "<="))
+    ) %>%
+      mutate(pct_on = (on_n / cohort_n) * 100)
+  }
 
   # 3. Construct Output
   ggplot(retention, aes(x = day, y = pct_on)) +
@@ -3833,7 +3709,7 @@ out_plot_tpt_retention_step <- function(data = treatment_data, max_day = 168) {
 #' @param data Dataframe. Defaults to treatment_data from the environment
 out_tab_tpt_monitoring_summary <- function(data = treatment_data) {
   if (nrow(data) == 0) {
-    return(flextable(data.frame(Msg = "No Data Available")))
+    return(no_data_flextable())
   }
 
   # 1. Configuration
@@ -3970,14 +3846,6 @@ out_plot_tpt_followup_monthly <- function(data = monthly_long) {
     filter(Indicator %in% names(indicator_labels_tpt)) %>%
     mutate(Indicator = recode(Indicator, !!!indicator_labels_tpt))
 
-  if (nrow(plot_data) == 0) {
-    return(
-      ggplot() +
-        annotate("text", x = 0, y = 0, label = "No data available") +
-        theme_void()
-    )
-  }
-
   # 4. Dynamic Headroom Calculation
   y_max <- suppressWarnings(max(plot_data$Value, na.rm = TRUE))
   y_cap <- if (is.finite(y_max)) ceiling(y_max / 10) * 10 else 100
@@ -4072,14 +3940,6 @@ out_plot_tpt_symptoms_demographics <- function(data = treatment_data) {
       .groups = "drop"
     )
 
-  if (nrow(plot_data) == 0) {
-    return(
-      ggplot() +
-        annotate("text", x = 0, y = 0, label = "No data available") +
-        theme_void()
-    )
-  }
-
   # 2. Dynamic Headroom Calculation (Rounded to nearest 5%)
   y_max <- suppressWarnings(max(plot_data$prevalence, na.rm = TRUE))
   y_cap <- if (is.finite(y_max)) max(0.05, ceiling(y_max * 20) / 20) else 0.05
@@ -4114,7 +3974,7 @@ out_plot_tpt_symptoms_demographics <- function(data = treatment_data) {
 #' @param data Dataframe. Defaults to treatment_data from the environment
 out_tab_tpt_symptoms_count <- function(data = treatment_data) {
   if (nrow(data) == 0) {
-    return(flextable(data.frame(Msg = "No Data Available")))
+    return(no_data_flextable())
   }
 
   # 1. Data Preparation
@@ -4174,7 +4034,7 @@ out_tab_tpt_symptoms_count <- function(data = treatment_data) {
 #' @param data Dataframe. Defaults to treatment_data from the environment
 out_tab_tpt_symptoms_detail <- function(data = treatment_data) {
   if (nrow(data) == 0) {
-    return(flextable(data.frame(Msg = "No Data Available")))
+    return(no_data_flextable())
   }
 
   # Refactored: Relying on logical coercion from upstream pipeline (TRUE = 1, FALSE = 0)
@@ -4352,10 +4212,6 @@ out_tab_tpt_outcomes_by_symptoms <- function(
   df_cohort <- data %>%
     filter(!is.na(tpt_start_date), tpt_start_date < cutoff_date)
 
-  if (nrow(df_cohort) == 0) {
-    return(flextable(data.frame(Msg = "No Data Available")))
-  }
-
   # 2. Build Counts
   base_counts <- df_cohort %>%
     mutate(
@@ -4464,7 +4320,7 @@ out_tab_tpt_outcomes_by_symptoms <- function(
 #' @param data Dataframe. Defaults to treatment_data from the environment
 out_tab_ae_type_summary <- function(data = treatment_data) {
   if (nrow(data) == 0) {
-    return(flextable(data.frame(Msg = "No Data Available")))
+    return(no_data_flextable())
   }
 
   is_checked <- function(x) {
@@ -4530,10 +4386,6 @@ out_tab_ae_type_summary <- function(data = treatment_data) {
 out_tab_tpt_discontinued_ae_profile <- function(data = treatment_data) {
   df_disc <- data %>% filter(tpt_outcome_reason == "Discontinued")
   total_n <- nrow(df_disc)
-
-  if (total_n == 0) {
-    return(flextable(data.frame(Msg = "No Data Available")))
-  }
 
   flags <- df_disc %>%
     transmute(
