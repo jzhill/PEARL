@@ -29,7 +29,72 @@ source(here::here("R", "05_output_functions.R"))
 load_latest_tidy_data()
 ```
 
-## Project Overview: Core Indicators (Last 12 Weeks)
+```{r}
+#| label: week-narrative-data
+
+target_week <- max(weekly_data$period_start, na.rm = TRUE)
+
+week_screening <- screening_data %>%
+  filter(week_reg == target_week)
+
+eas_registered <- week_screening %>%
+  distinct(ea) %>%
+  filter(!is.na(ea), ea != "") %>%
+  arrange(ea) %>%
+  pull(ea)
+
+n_eas <- length(eas_registered)
+
+eas_text <- if (n_eas == 0) {
+  "no EAs"
+} else if (n_eas == 1) {
+  eas_registered
+} else if (n_eas == 2) {
+  paste(eas_registered, collapse = " and ")
+} else {
+  paste0(
+    paste(eas_registered[-n_eas], collapse = ", "),
+    ", and ",
+    eas_registered[n_eas]
+  )
+}
+
+villages_registered <- week_screening %>%
+  distinct(village) %>%
+  filter(!is.na(village), village != "") %>%
+  arrange(village) %>%
+  pull(village)
+
+n_villages <- length(villages_registered)
+
+villages_text <- if (n_villages == 0) {
+  "no villages"
+} else if (n_villages == 1) {
+  villages_registered
+} else if (n_villages == 2) {
+  paste(villages_registered, collapse = " and ")
+} else {
+  paste0(
+    paste(villages_registered[-n_villages], collapse = ", "),
+    ", and ",
+    villages_registered[n_villages]
+  )
+}
+
+n_registered <- nrow(week_screening)
+
+n_households <- weekly_data %>%
+  filter(period_start == target_week) %>%
+  pull(hh_screened)
+```
+
+## Summary
+
+This week (`r format(target_week, "%d %b %Y")`), the PEARL+ team registered
+participants from `r n_eas` `r if (n_eas == 1) "EA" else "EAs"`
+(`r eas_text`) and `r n_villages` `r if (n_villages == 1) "village" else "villages"`
+(`r villages_text`). We registered `r n_registered` participants from
+`r n_households` unique households.
 
 ```{r}
 #| label: project-core-table
@@ -39,12 +104,21 @@ out_tab_project_weekly_review(core_only = TRUE, table_width = 10)
 
 {{< pagebreak >}}
 
-## Project Overview: Weekly Quality Trends
+## Weekly Activity
+
+```{r}
+#| label: team-core-table
+out_tab_team_weekly_review(period = "current", core_only = TRUE) %>%
+  flextable::autofit() %>%
+  flextable::fit_to_width(10)
+```
+
+{{< pagebreak >}}
 
 ```{r}
 #| label: project-quality-plot
 #| fig-width: 9
-#| fig-height: 6
+#| fig-height: 5
 #| fig-align: center
 
 out_plot_weekly_quality()
@@ -52,11 +126,26 @@ out_plot_weekly_quality()
 
 {{< pagebreak >}}
 
-## Team Performance: Core Indicators (Current Week)
+## EA Progress
 
 ```{r}
-#| label: team-core-table
-out_tab_team_weekly_review(period = "current", core_only = TRUE)
+#| label: ea-coverage-plot
+#| fig-width: 9
+#| fig-height: 5
+#| fig-align: center
+
+out_plot_ea_coverage()
+```
+
+{{< pagebreak >}}
+
+```{r}
+#| label: village-cumulative-coverage-plot
+#| fig-width: 9
+#| fig-height: 5
+#| fig-align: center
+
+out_plot_village_cumulative_coverage()
 ```
 
 {{< pagebreak >}}
