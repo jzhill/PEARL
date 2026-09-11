@@ -16,7 +16,7 @@ library(epikit)
 library(dplyr)
 library(purrr)
 library(sf)
-library(qs)
+library(qs2)
 
 # Parameters ----------------------------------------
 
@@ -1778,11 +1778,11 @@ tidy_data <- list(
 tidy_data_dir <- file.path(here("data-processed", "tidy-data-bundles"))
 tidy_data_path <- file.path(
   tidy_data_dir,
-  paste0("tidy_data_", current_date, ".qs")
+  paste0("tidy_data_", current_date, ".qs2")
 )
-tidy_data_latest_path <- file.path(tidy_data_dir, "tidy_data_latest.qs")
+tidy_data_latest_path <- file.path(tidy_data_dir, "tidy_data_latest.qs2")
 
 dir.create(tidy_data_dir, recursive = TRUE, showWarnings = FALSE)
 
-qsave(tidy_data, tidy_data_path)
-qsave(tidy_data, tidy_data_latest_path)
+qs_save(tidy_data, tidy_data_path)
+qs_save(tidy_data, tidy_data_latest_path)

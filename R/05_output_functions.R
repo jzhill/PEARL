@@ -121,17 +121,17 @@ theme_pearl <- function(x) {
 
 
 #' Load and unpack the most recent tidy data file
-#' @param path String. Path to the folder containing .qs files
+#' @param path String. Path to the folder containing .qs2 files
 load_latest_tidy_data <- function(path = "data-processed/tidy-data-bundles") {
-  files <- list.files(here(path), pattern = "\\.qs$", full.names = TRUE)
+  files <- list.files(here(path), pattern = "\\.qs2$", full.names = TRUE)
   if (length(files) == 0) {
-    stop("No .qs files found in ", path)
+    stop("No .qs2 files found in ", path)
   }
 
   latest_file <- sort(files, decreasing = TRUE)[1]
   message("Loading latest data from: ", latest_file)
 
-  data <- qread(latest_file)
+  data <- qs_read(latest_file)
   list2env(data, envir = .GlobalEnv)
   message(
     "Successfully unpacked ",
