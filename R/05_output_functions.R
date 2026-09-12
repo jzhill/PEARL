@@ -476,12 +476,11 @@ out_tab_team_weekly_review <- function(
 #'   shows a complete final period instead of a blank one.
 #' @param start_date Date. Optional; defaults to periods_back periods prior to end_date.
 #' @param periods_back Numeric. How many periods (see interval) to show before
-#'   end_date when start_date isn't given (default 12). 2026-09: added to
-#'   replace a hardcoded weeks(12); anchor behavior above is unchanged.
+#'   end_date when start_date isn't given (default 12).
 #' @param interval Character. "week" or "month" - which pre-aggregated dataset
-#'   and period length periods_back counts in (default "week"). 2026-09:
-#'   quarter/year aren't available yet - build_time_agg() in 03_tidy_data.R
-#'   only produces week/month aggregates.
+#'   and period length periods_back counts in (default "week"). Quarter/year
+#'   aren't available - build_time_agg() in 03_tidy_data.R only produces
+#'   week/month aggregates.
 #' @param core_only Logical. Show only core indicators (default TRUE).
 #' @param font_size Numeric. Base font size.
 #' @param table_width Numeric. Total table width in inches.
@@ -767,12 +766,11 @@ out_plot_weekly_activity <- function(data = weekly_data) {
 #'   shows a complete final period instead of a blank one.
 #' @param start_date Date. Optional; defaults to periods_back periods prior to end_date.
 #' @param periods_back Numeric. How many periods (see interval) to show before
-#'   end_date when start_date isn't given (default 12). 2026-09: added to
-#'   replace a hardcoded weeks(12); anchor behavior above is unchanged.
+#'   end_date when start_date isn't given (default 12).
 #' @param interval Character. "week" or "month" - which pre-aggregated dataset
-#'   and period length periods_back counts in (default "week"). 2026-09:
-#'   quarter/year aren't available yet - build_time_agg() in 03_tidy_data.R
-#'   only produces week/month aggregates.
+#'   and period length periods_back counts in (default "week"). Quarter/year
+#'   aren't available - build_time_agg() in 03_tidy_data.R only produces
+#'   week/month aggregates.
 #' @param date_breaks Character. Spacing for the x-axis ticks. Defaults to "1
 #'   week" or "1 month" to match interval, unless overridden.
 #' @param base_size Numeric. Base font size for the plot (default 11).
@@ -3222,14 +3220,18 @@ out_tab_scabies_prevalence_demographics <- function(data = screening_data) {
 
 # --- TPT OUTPUTS ------------------------------------------------
 
-#' Plot TPT cascade: from TST positive to treatment completion
+#' Column chart of the TST-positive-to-TPT-completion cascade: number of
+#' patients at each stage - TST Positive, TST Positive with TB Ruled Out,
+#' Completed TPT Assessment, Eligible for TPT, Started TPT, [weeks_lag]+
+#' Weeks Since Starting, Treatment Outcome Assigned, Completed TPT.
+#'
 #' @param s_data Dataframe. Defaults to screening_data from the environment
 #' @param t_data Dataframe. Defaults to treatment_data from the environment
-#' @param weeks_lag Numeric. Minimum weeks since TPT start before a patient is counted in
-#'   the "expected outcome" cohort (default 16). Renamed 2026-09 from weeks_lookback: this
-#'   is a cohort-maturity cutoff (exclude anyone who hasn't had time to reach an outcome
-#'   yet), the same mechanism as weeks_lag in out_tab_tpt_outcomes_monthly and
-#'   out_tab_tpt_outcomes_by_symptoms - not a display window, despite the old name.
+#' @param weeks_lag Numeric. Minimum weeks since TPT start before a patient is
+#'   counted in the "expected outcome" cohort (default 16) - a cohort-maturity
+#'   cutoff (exclude anyone who hasn't had time to reach an outcome yet), the
+#'   same mechanism as weeks_lag in out_tab_tpt_outcomes_monthly and
+#'   out_tab_tpt_outcomes_by_symptoms.
 out_plot_tpt_cascade <- function(
   s_data = screening_data,
   t_data = treatment_data,
