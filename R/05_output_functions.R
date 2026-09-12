@@ -41,12 +41,12 @@ library(openxlsx)
 #    - Missing 'base_size' (plots hardcode font/theme sizes instead):
 #      out_plot_age_pyramid, out_plot_betio_coverage_map, out_plot_betio_household_points,
 #      out_plot_betio_screening_map, out_plot_ea_coverage, out_plot_lep_yield_demographics,
-#      out_plot_monthly_quality_indicators, out_plot_tb_outcome_proportions_6m,
+#      out_plot_monthly_quality_indicators, out_plot_tb_outcome_proportions_time,
 #      out_plot_tb_yield_demographics, out_plot_tpt_age_pyramid, out_plot_tpt_assessment_gaps,
 #      out_plot_tpt_cascade, out_plot_tpt_followup_monthly, out_plot_tpt_ineligibility_reasons,
 #      out_plot_tpt_outcome_proportions, out_plot_tpt_retention_step, out_plot_tpt_risk_cascade,
 #      out_plot_tpt_symptoms_demographics, out_plot_treatment_proportions_time,
-#      out_plot_tst_positivity_by_age, out_plot_tst_proportions_6m, out_plot_tst_thresholds_age,
+#      out_plot_tst_positivity_by_age, out_plot_tst_proportions_time, out_plot_tst_thresholds_age,
 #      out_plot_tst_yield_demographics, out_plot_village_cumulative_coverage,
 #      out_plot_village_cumulative_eligible_coverage, out_plot_village_cumulative_screening,
 #      out_plot_weekly_activity
@@ -95,17 +95,21 @@ library(openxlsx)
 #                                          controls bucketing/labels. Not yet retrofitted elsewhere.)
 #      - start_date/end_date + periods_back/interval (week/month only - see
 #        build_time_agg() in 03_tidy_data.R): out_plot_weekly_quality,
-#        out_tab_project_weekly_review (2026-09: standardized; anchor
-#        deliberately stays at max(data$period_start), not Sys.Date(),
-#        confirmed with Jeremy - see each function's own roxygen doc)
+#        out_tab_project_weekly_review, out_plot_tb_outcome_proportions_time,
+#        out_plot_tst_proportions_time (2026-09: standardized; anchor deliberately
+#        stays at max(data$period_start), not Sys.Date(), confirmed with Jeremy -
+#        see each function's own roxygen doc. The last two were renamed from
+#        _6m and refactored to read weekly_data/monthly_data's precomputed
+#        tbdec_*/tst_* columns instead of re-deriving the same breakdown from
+#        raw screening_data; default changed from "6 months of always-weekly
+#        bars" (mixed units) to periods_back = 12, interval = "week", matching
+#        the rest of this group)
 #      - start_year/end_year:             out_tab_lep_village
 #      - weeks_lag (cohort-maturity cutoff, NOT a display window - excludes anyone who
 #        hasn't had time to reach an outcome yet): out_tab_tpt_outcomes_monthly,
 #        out_tab_tpt_outcomes_by_symptoms, out_plot_tpt_cascade (2026-09: renamed from
 #        weeks_lookback here - same mechanism, was just named differently)
 #      - target_week (point, not range):  out_tab_activity_summary, out_tab_team_weekly_review
-#    And two functions hardcode a 6-month lookback with no parameter at all:
-#      out_plot_tb_outcome_proportions_6m, out_plot_tst_proportions_6m (literal months(6)).
 #    2026-09: reviewing function-by-function with Jeremy before unifying further -
 #    several of these encode a specific, deliberate reason (e.g. anchoring to the latest
 #    date IN THE DATA rather than Sys.Date(), to avoid a blank current period when data
@@ -1340,19 +1344,69 @@ out_plot_betio_household_points <- function(
 
 ## Plots -------------------------------------
 
-#' Plot weekly proportion of TB outcomes for the last 6 months
-#' @param data Dataframe. Defaults to screening_data from the environment
-out_plot_tb_outcome_proportions_6m <- function(data = screening_data) {
+#' Column chart of TB screening outcomes over time, as proportions of the
+#' total screened in each time period.
+#'
+#' 2026-09: renamed from out_plot_tb_outcome_proportions_6m and refactored to
+#' read weekly_data/monthly_data's precomputed tbdec_prestb/tbdec_ro/
+#' tbdec_unc/tbdec_missing columns (see tb_dist_by_key() in 03_tidy_data.R)
+#' instead of re-deriving the same 4-category breakdown from raw
+#' screening_data - these are already the same counts, computed the same
+#' way. The old version also mixed units (a 6-*month* window of always-
+#' *weekly* bars); default is now a clean periods_back/interval pair.
+#'
+#' @param data Dataframe. Defaults to weekly_data (interval = "week") or
+#'   monthly_data (interval = "month").
+#' @param end_date Date. Optional; defaults to max date in data - deliberately
+#'   anchored to the latest date actually present in the data rather than
+#'   Sys.Date(), so a report run before this period's data has landed still
+#'   shows a complete final period instead of a blank one.
+#' @param start_date Date. Optional; defaults to periods_back periods prior to end_date.
+#' @param periods_back Numeric. How many periods (see interval) to show before
+#'   end_date when start_date isn't given (default 12).
+#' @param interval Character. "week" or "month" (default "week", matching
+#'   the previous behavior's bar granularity). Quarter/year aren't available
+#'   yet - build_time_agg() in 03_tidy_data.R only produces week/month.
+out_plot_tb_outcome_proportions_time <- function(
+  data = NULL,
+  end_date = NULL,
+  start_date = NULL,
+  periods_back = 12,
+  interval = c("week", "month")
+) {
+  interval <- match.arg(interval)
+
+  if (is.null(data)) {
+    data <- if (interval == "week") weekly_data else monthly_data
+  }
+
   if (nrow(data) == 0) {
     return(no_data_plot())
   }
 
-  # Data manipulation: Filter for last 6 months and handle factors
+  if (is.null(end_date)) {
+    end_date <- max(data$period_start, na.rm = TRUE)
+  }
+  if (is.null(start_date)) {
+    start_date <- if (interval == "week") {
+      end_date - weeks(periods_back)
+    } else {
+      end_date %m-% months(periods_back)
+    }
+  }
+
   plot_data <- data %>%
-    filter(week_reg >= (max(week_reg[!is.na(week_reg)]) %m-% months(6))) %>%
+    filter(period_start >= start_date & period_start <= end_date) %>%
+    select(period_start, tbdec_prestb, tbdec_ro, tbdec_unc, tbdec_missing) %>%
+    pivot_longer(-period_start, names_to = "tb_decision", values_to = "count") %>%
     mutate(
-      tb_decision = as.character(tb_decision),
-      tb_decision = replace(tb_decision, is.na(tb_decision), "Missing"),
+      tb_decision = recode(
+        tb_decision,
+        tbdec_missing = "Missing",
+        tbdec_unc = "TB status uncertain",
+        tbdec_ro = "Ruled out TB",
+        tbdec_prestb = "Presumptive TB"
+      ),
       tb_decision = factor(
         tb_decision,
         levels = c(
@@ -1363,13 +1417,15 @@ out_plot_tb_outcome_proportions_6m <- function(data = screening_data) {
         )
       )
     ) %>%
-    group_by(week_reg, tb_decision) %>%
-    summarise(count = n(), .groups = 'drop') %>%
-    group_by(week_reg) %>%
-    mutate(proportion = count / sum(count))
+    group_by(period_start) %>%
+    mutate(proportion = count / sum(count)) %>%
+    ungroup()
+
+  date_breaks <- if (interval == "week") "1 week" else "1 month"
+  date_labels <- if (interval == "week") "%Y-%m-%d" else "%b %Y"
 
   # Construct output
-  ggplot(plot_data, aes(x = week_reg, y = proportion, fill = tb_decision)) +
+  ggplot(plot_data, aes(x = period_start, y = proportion, fill = tb_decision)) +
     geom_bar(stat = "identity") +
     scale_fill_manual(
       values = c(
@@ -1379,12 +1435,12 @@ out_plot_tb_outcome_proportions_6m <- function(data = screening_data) {
         "Presumptive TB" = "lightcoral"
       )
     ) +
-    scale_x_date(date_labels = "%Y-%m-%d", date_breaks = "1 week") +
-    scale_y_continuous(labels = label_percent(accuracy = 1)) + # Refactor: 0.25 -> 25%
+    scale_x_date(date_labels = date_labels, date_breaks = date_breaks) +
+    scale_y_continuous(labels = label_percent(accuracy = 1)) +
     labs(
-      x = "Week of Registration",
+      x = if (interval == "week") "Week of Registration" else "Month of Registration",
       y = "Proportion",
-      title = "Weekly proportion of TB outcome (Last 6 Months)",
+      title = paste0("TB Screening Outcome Proportions by ", str_to_title(interval)),
       fill = "TB decision"
     ) +
     theme_light() +
@@ -1392,37 +1448,87 @@ out_plot_tb_outcome_proportions_6m <- function(data = screening_data) {
 }
 
 
-#' Plot weekly proportion of TST results for the last 6 months
-#' @param data Dataframe. Defaults to screening_data from the environment
-out_plot_tst_proportions_6m <- function(data = screening_data) {
+#' Column chart of TST screening results over time, as proportions of the
+#' total screened in each time period.
+#'
+#' 2026-09: renamed from out_plot_tst_proportions_6m and refactored to read
+#' weekly_data/monthly_data's precomputed tst_pos/tst_neg/tst_missing
+#' columns (see tst_dist_by_key() in 03_tidy_data.R) instead of re-deriving
+#' the same 3-category breakdown from raw screening_data. See
+#' out_plot_tb_outcome_proportions_time() for the equivalent TB version and
+#' full rationale.
+#'
+#' @param data Dataframe. Defaults to weekly_data (interval = "week") or
+#'   monthly_data (interval = "month").
+#' @param end_date Date. Optional; defaults to max date in data - deliberately
+#'   anchored to the latest date actually present in the data rather than
+#'   Sys.Date(), so a report run before this period's data has landed still
+#'   shows a complete final period instead of a blank one.
+#' @param start_date Date. Optional; defaults to periods_back periods prior to end_date.
+#' @param periods_back Numeric. How many periods (see interval) to show before
+#'   end_date when start_date isn't given (default 12).
+#' @param interval Character. "week" or "month" (default "week", matching
+#'   the previous behavior's bar granularity). Quarter/year aren't available
+#'   yet - build_time_agg() in 03_tidy_data.R only produces week/month.
+out_plot_tst_proportions_time <- function(
+  data = NULL,
+  end_date = NULL,
+  start_date = NULL,
+  periods_back = 12,
+  interval = c("week", "month")
+) {
+  interval <- match.arg(interval)
+
+  if (is.null(data)) {
+    data <- if (interval == "week") weekly_data else monthly_data
+  }
+
   if (nrow(data) == 0) {
     return(no_data_plot())
   }
 
-  # Data manipulation: Filter for 6-month window and handle factor levels
+  if (is.null(end_date)) {
+    end_date <- max(data$period_start, na.rm = TRUE)
+  }
+  if (is.null(start_date)) {
+    start_date <- if (interval == "week") {
+      end_date - weeks(periods_back)
+    } else {
+      end_date %m-% months(periods_back)
+    }
+  }
+
   plot_data <- data %>%
-    filter(week_reg >= (max(week_reg[!is.na(week_reg)]) %m-% months(6))) %>%
+    filter(period_start >= start_date & period_start <= end_date) %>%
+    select(period_start, tst_pos, tst_neg, tst_missing) %>%
+    pivot_longer(
+      -period_start,
+      names_to = "tst_read_positive",
+      values_to = "count"
+    ) %>%
     mutate(
-      tst_read_positive = as.character(tst_read_positive),
-      tst_read_positive = replace(
+      tst_read_positive = recode(
         tst_read_positive,
-        is.na(tst_read_positive),
-        "Missing"
+        tst_missing = "Missing",
+        tst_neg = "Negative TST",
+        tst_pos = "Positive TST"
       ),
       tst_read_positive = factor(
         tst_read_positive,
         levels = c("Missing", "Negative TST", "Positive TST")
       )
     ) %>%
-    group_by(week_reg, tst_read_positive) %>%
-    summarise(count = n(), .groups = 'drop') %>%
-    group_by(week_reg) %>%
-    mutate(proportion = count / sum(count))
+    group_by(period_start) %>%
+    mutate(proportion = count / sum(count)) %>%
+    ungroup()
+
+  date_breaks <- if (interval == "week") "1 week" else "1 month"
+  date_labels <- if (interval == "week") "%Y-%m-%d" else "%b %Y"
 
   # Construct output
   ggplot(
     plot_data,
-    aes(x = week_reg, y = proportion, fill = tst_read_positive)
+    aes(x = period_start, y = proportion, fill = tst_read_positive)
   ) +
     geom_bar(stat = "identity") +
     scale_fill_manual(
@@ -1432,12 +1538,12 @@ out_plot_tst_proportions_6m <- function(data = screening_data) {
         "Positive TST" = "lightcoral"
       )
     ) +
-    scale_x_date(date_labels = "%Y-%m-%d", date_breaks = "1 week") +
+    scale_x_date(date_labels = date_labels, date_breaks = date_breaks) +
     scale_y_continuous(labels = label_percent(accuracy = 1)) +
     labs(
-      x = "Week of Registration",
+      x = if (interval == "week") "Week of Registration" else "Month of Registration",
       y = "Proportion",
-      title = "Weekly proportion of TST result (Last 6 Months)",
+      title = paste0("TST Result Proportions by ", str_to_title(interval)),
       fill = "TST result"
     ) +
     theme_light() +
