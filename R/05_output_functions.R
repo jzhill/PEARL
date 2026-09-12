@@ -364,6 +364,11 @@ out_tab_activity_summary <- function(data = weekly_data, target_week = NULL) {
 #' core_only = TRUE (default) shows only core indicators; core_only = FALSE
 #' shows the full indicator dictionary, grouped by section.
 #'
+#' @param data Dataframe. Defaults to team_weekly_data.
+#' @param weekly_df Dataframe. Project-wide weekly data used for the "ALL" column. Defaults to weekly_data.
+#' @param target_week Date. Optional; defaults to the latest week in data.
+#' @param period Character. "current" (default) or "previous" - which week relative to target_week to show.
+#' @param core_only Logical. Show only core indicators (default TRUE).
 #' @param font_size Numeric. Base font size for the table.
 #' @param table_width Numeric. Total table width in inches. Defaults to NULL (autofit).
 out_tab_team_weekly_review <- function(
@@ -610,6 +615,7 @@ out_tab_project_weekly_review <- function(
 #'   rows. Defaults to the core indicator set from get_all_indicators_dict(),
 #'   intersected with the columns actually present in data (same expression
 #'   used at the real call site in 05_run_outputs.R).
+#' @param title Character. Table header title (default "Geographic Performance Indicators").
 #' @param areas Character vector. List of EAs or Villages to include. If NULL, includes all.
 #' @param id_col Character. The name of the ID column ("record_id" or "village").
 #' @param show_total Logical. If TRUE, adds a 'Total' column to the right.
@@ -3252,6 +3258,8 @@ out_xlsx_lri_report <- function(
 
   invisible(output_path)
 }
+# Note: unlike the plot/table exemplars above, this one writes a real file to disk.
+# out_xlsx_lri_report(data_hh = household_data, data_scr = screening_data, start_date = as.Date("2023-01-01"), end_date = as.Date("2026-06-30"), interval = "year", output_path = NULL)
 
 
 # --- SCABIES SCREENING OUTCOMES -----------------------------------------------
