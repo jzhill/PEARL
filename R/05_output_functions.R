@@ -136,6 +136,54 @@ library(qs2)
 # (Item 5, minor dead code in out_plot_village_cumulative_eligible_coverage, resolved
 #  2026-09-11: confirmed first_screen_date is already joined upstream in village_data_cum
 #  (03_tidy_data.R), so the commented-out select/left_join was removed.)
+#
+# 6. TITLE AS A STANDARD PARAMETER (not started). Every output function should
+#    keep a real title by default (no behavior change to existing reports),
+#    but the title should become an actual parameter - overridable with custom
+#    text, and suppressible entirely by passing title = NULL. Confirmed with
+#    Jeremy: default = each function's current title text (several are
+#    dynamically computed from the call, e.g. out_tab_project_weekly_review's
+#    date range, out_tab_lep_referral_outcomes's cohort footer - these carry
+#    real information and must not silently disappear), not "no title unless
+#    asked for".
+#
+#    Plots: mechanically simple. Add title = "<current hardcoded text>" as a
+#    parameter, change the hardcoded labs(title = "...") to labs(title = title,
+#    ...). ggplot2 already treats title = NULL as "draw no title at all" - no
+#    conditional logic needed.
+#
+#    Tables (flextable): current style bakes the title into the header via
+#    add_header_lines(values = "...") (a row spanning all columns, above any
+#    existing multi-row headers like the Male/Female groupings some tables
+#    have). Two candidate approaches, in order of preference - pick after
+#    checking flextable's actual behavior (installed version per renv.lock:
+#    0.10.0; couldn't load the package in this session to verify directly):
+#      a. flextable::set_caption() - attaches a genuine caption element
+#         distinct from the header/body cell grid, which may natively support
+#         being omitted. Check whether its rendered look (position, styling)
+#         matches the existing "Table: XYZ" header-row convention closely
+#         enough to switch to it, or whether it's visually a different thing
+#         (e.g. positioned/styled differently in Word/HTML output).
+#      b. If (a) doesn't fit: keep add_header_lines(), just wrap it
+#         conditionally - if (!is.null(title)) { ft <- ft %>%
+#         add_header_lines(values = title) } - skipping the extra header row
+#         entirely when suppressed. This is a known-safe fallback (the file
+#         already uses this exact "conditionally apply a flextable modifier"
+#         pattern for table_width, e.g. in out_tab_project_weekly_review), so
+#         don't get stuck on (a) if it doesn't pan out.
+#
+#    Also worth checking before implementing:
+#      - Audit whether every function currently has SOME title already (a few
+#        may not - don't assume all 52 do).
+#      - Check export_table()/export_plot() (05_run_outputs.R) for whether
+#        they already add their own filename-based label/caption on export,
+#        which could make an in-function title redundant in that specific
+#        pipeline even though it's still useful for ad hoc console/Quarto use.
+#
+#    Scope: touches actual rendering logic in ~52 function bodies (not just
+#    docs), comparable in size to the time-window unification work earlier -
+#    do it one function at a time, not a batch find-replace, given the
+#    table-header nuances above.
 # ----------------------------------------------------------------------------------
 
 # --- DATA INFRASTRUCTURE ------------------------------------------------------
