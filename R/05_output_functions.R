@@ -15,6 +15,8 @@ library(cowplot)
 library(scales)
 library(sf)
 library(openxlsx)
+library(here)
+library(qs2)
 
 # --- MAINTENANCE RULES FOR AI AGENTS ---------------------
 # 1. PRAGMATIC PARAMETERS: All output functions should support scaling.
@@ -31,15 +33,22 @@ library(openxlsx)
 # Nothing below has been fixed yet - annotations only.
 #
 # 1. SCALING PARAMETERS (Rule 1 above is not yet consistently applied):
+#    IMPLEMENT ON DEMAND ONLY. Do not batch-apply this across the lists
+#    below. Add 'base_size' / 'font_size' / 'table_width' to a specific
+#    function only when an actual report needs that function resized (e.g.
+#    to fit a print width or a slide) - not pre-emptively, not for
+#    consistency alone. Pattern to copy: out_plot_weekly_quality for
+#    base_size; out_tab_lep_ind_time or out_tab_project_weekly_review for
+#    font_size/table_width.
 #    - Missing 'base_size' (plots hardcode font/theme sizes instead):
 #      out_plot_age_pyramid, out_plot_betio_coverage_map, out_plot_betio_household_points,
 #      out_plot_betio_screening_map, out_plot_ea_coverage, out_plot_lep_yield_demographics,
-#      out_plot_monthly_quality_indicators, out_plot_tb_outcome_proportions_6m,
+#      out_plot_monthly_quality_indicators, out_plot_tb_outcome_proportions_time,
 #      out_plot_tb_yield_demographics, out_plot_tpt_age_pyramid, out_plot_tpt_assessment_gaps,
 #      out_plot_tpt_cascade, out_plot_tpt_followup_monthly, out_plot_tpt_ineligibility_reasons,
 #      out_plot_tpt_outcome_proportions, out_plot_tpt_retention_step, out_plot_tpt_risk_cascade,
-#      out_plot_tpt_symptoms_demographics, out_plot_treatment_proportions_monthly,
-#      out_plot_tst_positivity_by_age, out_plot_tst_proportions_6m, out_plot_tst_thresholds_age,
+#      out_plot_tpt_symptoms_demographics, out_plot_treatment_proportions_time,
+#      out_plot_tst_positivity_by_age, out_plot_tst_proportions_time, out_plot_tst_thresholds_age,
 #      out_plot_tst_yield_demographics, out_plot_village_cumulative_coverage,
 #      out_plot_village_cumulative_eligible_coverage, out_plot_village_cumulative_screening,
 #      out_plot_weekly_activity
@@ -51,7 +60,7 @@ library(openxlsx)
 #      out_tab_tb_yield_efficiency, out_tab_tpt_demographics_count, out_tab_tpt_discontinued_ae_profile,
 #      out_tab_tpt_initiation_by_risk, out_tab_tpt_monitoring_summary, out_tab_tpt_outcomes_by_symptoms,
 #      out_tab_tpt_outcomes_monthly, out_tab_tpt_symptoms_count, out_tab_tpt_symptoms_detail,
-#      out_tab_treatment_proportions_monthly, out_tab_tst_yield_demographics_table
+#      out_tab_treatment_proportions_time, out_tab_tst_yield_demographics_table
 #      (out_tab_modelling_inputs_xlsx is exempt - it exports xlsx, not a flextable)
 #    - out_tab_geo_indicators has 'font_size' but no 'table_width'.
 #    - Already-compliant functions to use as reference: out_plot_weekly_quality,
@@ -86,28 +95,102 @@ library(openxlsx)
 #                                          convention going forward - start_date/end_date filter the
 #                                          raw dates directly, interval = c("year","quarter","month")
 #                                          controls bucketing/labels. Not yet retrofitted elsewhere.)
-#      - start_date/end_date (no interval): out_plot_weekly_quality, out_tab_project_weekly_review
-#      - start_year/end_year:             out_tab_lep_village
-#      - weeks_lookback:                  out_plot_tpt_cascade
-#      - weeks_lag:                       out_tab_tpt_outcomes_monthly, out_tab_tpt_outcomes_by_symptoms
+#      - start_date/end_date + periods_back/interval (week/month only - see
+#        build_time_agg() in 03_tidy_data.R): out_plot_weekly_quality,
+#        out_tab_project_weekly_review, out_plot_tb_outcome_proportions_time,
+#        out_plot_tst_proportions_time (2026-09: standardized; anchor deliberately
+#        stays at max(data$period_start), not Sys.Date(), confirmed with Jeremy -
+#        see each function's own roxygen doc. The last two were renamed from
+#        _6m and refactored to read weekly_data/monthly_data's precomputed
+#        tbdec_*/tst_* columns instead of re-deriving the same breakdown from
+#        raw screening_data; default changed from "6 months of always-weekly
+#        bars" (mixed units) to periods_back = 12, interval = "week", matching
+#        the rest of this group)
+#      - start_date/end_date (whole calendar years, no periods_back yet -
+#        considered adding periods_back/interval="year" but deferred, on
+#        demand only): out_tab_lep_village (2026-09: renamed from
+#        start_year/end_year; also now shares its indicator definitions with
+#        out_tab_lep_ind_time via lep_hh_metrics_by_key()/
+#        lep_scr_metrics_by_key() - see the TODO on those helpers for the
+#        planned move into build_time_agg()/build_area_agg())
+#      - weeks_lag (cohort-maturity cutoff, NOT a display window - excludes anyone who
+#        hasn't had time to reach an outcome yet): out_tab_tpt_outcomes_monthly,
+#        out_tab_tpt_outcomes_by_symptoms, out_plot_tpt_cascade (2026-09: renamed from
+#        weeks_lookback here - same mechanism, was just named differently)
 #      - target_week (point, not range):  out_tab_activity_summary, out_tab_team_weekly_review
-#    And two functions hardcode a 6-month lookback with no parameter at all:
-#      out_plot_tb_outcome_proportions_6m, out_plot_tst_proportions_6m (literal months(6)).
-#    Don't unify without agreeing a single house convention first.
+#    2026-09: reviewing function-by-function with Jeremy before unifying further -
+#    several of these encode a specific, deliberate reason (e.g. anchoring to the latest
+#    date IN THE DATA rather than Sys.Date(), to avoid a blank current period when data
+#    collection lags) that needs to be confirmed/recovered per function, not assumed.
 #
-# 4. VIRIDIS COLOR-SCALE INCONSISTENCY:
-#    Most charts use scale_fill/color_viridis_d(option = "F", begin = 0.2, end = 0.8).
-#    Deviations that may or may not be intentional:
-#      - out_plot_age_pyramid:             begin = 0.4, end = 0.6
-#      - out_plot_tpt_age_pyramid:         begin = 0.4, end = 0.7
-#      - out_plot_betio_household_points:  option = "D" (different palette), no begin/end
-#      - out_plot_tpt_outcome_proportions: direction = -1, no begin/end
-#      - out_plot_tpt_assessment_gaps, out_plot_tpt_cascade, out_plot_tpt_ineligibility_reasons,
-#        out_plot_tpt_risk_cascade: bare scale_fill_viridis_d() (full 0-1 range, default option)
+# 4. VIRIDIS COLOR-SCALE INCONSISTENCY: Resolved.
+#    All charts now use scale_fill/color_viridis_d(option = "F", begin = 0.2,
+#    end = 0.8), confirmed with Jeremy per-deviation rather than blanket-applied:
+#    out_plot_age_pyramid and out_plot_tpt_age_pyramid (were narrower/mismatched
+#    begin-end ranges), out_plot_betio_household_points (was option = "D"), and
+#    out_plot_tpt_assessment_gaps/out_plot_tpt_cascade/
+#    out_plot_tpt_ineligibility_reasons/out_plot_tpt_risk_cascade (were bare
+#    scale_fill_viridis_d()) were all standardized. out_plot_tpt_outcome_proportions's
+#    direction = -1 was kept - confirmed intentional.
 #
 # (Item 5, minor dead code in out_plot_village_cumulative_eligible_coverage, resolved
 #  2026-09-11: confirmed first_screen_date is already joined upstream in village_data_cum
 #  (03_tidy_data.R), so the commented-out select/left_join was removed.)
+#
+# 6. TITLE AS A STANDARD PARAMETER (not started). Every output function should
+#    keep a real title by default (no behavior change to existing reports),
+#    but the title should become an actual parameter - overridable with custom
+#    text, and suppressible entirely by passing title = NULL. Confirmed with
+#    Jeremy: default = each function's current title text (several are
+#    dynamically computed from the call, e.g. out_tab_project_weekly_review's
+#    date range, out_tab_lep_referral_outcomes's cohort footer - these carry
+#    real information and must not silently disappear), not "no title unless
+#    asked for".
+#
+#    Plots: mechanically simple. Add title = "<current hardcoded text>" as a
+#    parameter, change the hardcoded labs(title = "...") to labs(title = title,
+#    ...). ggplot2 already treats title = NULL as "draw no title at all" - no
+#    conditional logic needed.
+#
+#    Tables (flextable): current style bakes the title into the header via
+#    add_header_lines(values = "...") (a row spanning all columns, INSIDE the
+#    table's own border, above any existing multi-row headers like the Male/
+#    Female groupings some tables have). Checked flextable's actual docs
+#    (CRAN + the flextable book, since the package wasn't loadable in this
+#    session to test directly) for the alternative, set_caption():
+#      - set_caption() attaches a SEPARATE PARAGRAPH element, positioned
+#        above (default) or below the table via tab.topcaption - it is NOT
+#        part of the table's cell grid, unlike add_header_lines(). In Word it
+#        renders in the built-in "Table Caption" paragraph style (with
+#        auto-numbering/cross-reference support); a flextable is caption-less
+#        by default, so title = NULL naturally means "don't call it".
+#      - This means set_caption() is NOT a drop-in visual match for the
+#        current convention - switching to it would change how every table's
+#        title actually looks (a styled paragraph outside the table border,
+#        not a bold row spanning all columns inside it), which conflicts with
+#        this file's own "ZERO DRIFT: never change default styling" rule.
+#      - Recommendation: default to the zero-drift option - keep
+#        add_header_lines(), wrap it conditionally: if (!is.null(title)) {
+#        ft <- ft %>% add_header_lines(values = title) }, skipping the row
+#        entirely when suppressed. The file already uses this exact
+#        "conditionally apply a flextable modifier" pattern for table_width
+#        (e.g. in out_tab_project_weekly_review). Only consider set_caption()
+#        if a genuine future redesign of the table look (e.g. Word
+#        cross-references) is wanted - that would be a deliberate, separate
+#        decision, not a side effect of adding this parameter.
+#
+#    Also worth checking before implementing:
+#      - Audit whether every function currently has SOME title already (a few
+#        may not - don't assume all 52 do).
+#      - Check export_table()/export_plot() (05_run_outputs.R) for whether
+#        they already add their own filename-based label/caption on export,
+#        which could make an in-function title redundant in that specific
+#        pipeline even though it's still useful for ad hoc console/Quarto use.
+#
+#    Scope: touches actual rendering logic in ~52 function bodies (not just
+#    docs), comparable in size to the time-window unification work earlier -
+#    do it one function at a time, not a batch find-replace, given the
+#    table-header nuances above.
 # ----------------------------------------------------------------------------------
 
 # --- DATA INFRASTRUCTURE ------------------------------------------------------
@@ -258,7 +341,12 @@ get_pearl_events <- function() {
 
 ## Tables -------------------------------------
 
-#' Generate a flextable activity summary using pre-aggregated weekly indicators
+#' Table of weekly activity counts for a target week, compared against the
+#' previous week and the cumulative project total. Indicators: Households
+#' Enumerated, Households Screened, People Registered, TSTs Completed,
+#' Referred to NTP, Referred to NLP, Referred to Hep B, X-Rays Performed,
+#' X-Rays Resulted, Xpert Tests Done, Started on TPT, Completed TPT.
+#'
 #' @param data Dataframe. Defaults to weekly_data (the tidy summary object)
 #' @param target_week Date. Optional; defaults to the latest week in data
 out_tab_activity_summary <- function(data = weekly_data, target_week = NULL) {
@@ -323,9 +411,19 @@ out_tab_activity_summary <- function(data = weekly_data, target_week = NULL) {
 
   return(ft)
 }
+# out_tab_activity_summary(data = weekly_data, target_week = as.Date("2026-06-01"))
 
 
-#' Generate a weekly team performance table
+#' Table comparing each team's weekly performance against the project
+#' overall ("ALL" column), for a target week (current or previous).
+#' core_only = TRUE (default) shows only core indicators; core_only = FALSE
+#' shows the full indicator dictionary, grouped by section.
+#'
+#' @param data Dataframe. Defaults to team_weekly_data.
+#' @param weekly_df Dataframe. Project-wide weekly data used for the "ALL" column. Defaults to weekly_data.
+#' @param target_week Date. Optional; defaults to the latest week in data.
+#' @param period Character. "current" (default) or "previous" - which week relative to target_week to show.
+#' @param core_only Logical. Show only core indicators (default TRUE).
 #' @param font_size Numeric. Base font size for the table.
 #' @param table_width Numeric. Total table width in inches. Defaults to NULL (autofit).
 out_tab_team_weekly_review <- function(
@@ -432,19 +530,49 @@ out_tab_team_weekly_review <- function(
 
   return(ft)
 }
+# out_tab_team_weekly_review(data = team_weekly_data, weekly_df = weekly_data, target_week = as.Date("2026-06-01"), period = "current", core_only = TRUE, font_size = 9, table_width = 10)
 
 
-#' Generate a weekly project performance trend table
+#' Generate a project performance trend table
+#'
+#' Table of indicator values by week or month, one row per indicator, one
+#' column per period, spanning periods_back periods up to the latest
+#' week/month in the data. core_only = TRUE (default) shows the same core
+#' indicators as out_plot_weekly_quality; core_only = FALSE shows the full
+#' indicator dictionary, grouped by section.
+#'
+#' @param data Dataframe. Defaults to weekly_data (interval = "week") or
+#'   monthly_data (interval = "month").
+#' @param end_date Date. Optional; defaults to max date in data - deliberately
+#'   anchored to the latest date actually present in the data rather than
+#'   Sys.Date(), so a report run before this period's data has landed still
+#'   shows a complete final period instead of a blank one.
+#' @param start_date Date. Optional; defaults to periods_back periods prior to end_date.
+#' @param periods_back Numeric. How many periods (see interval) to show before
+#'   end_date when start_date isn't given (default 12).
+#' @param interval Character. "week" or "month" - which pre-aggregated dataset
+#'   and period length periods_back counts in (default "week"). Quarter/year
+#'   aren't available - build_time_agg() in 03_tidy_data.R only produces
+#'   week/month aggregates.
+#' @param core_only Logical. Show only core indicators (default TRUE).
 #' @param font_size Numeric. Base font size.
 #' @param table_width Numeric. Total table width in inches.
 out_tab_project_weekly_review <- function(
-  data = weekly_data,
+  data = NULL,
   end_date = NULL,
   start_date = NULL,
+  periods_back = 12,
+  interval = c("week", "month"),
   core_only = TRUE,
   font_size = 8,
   table_width = NULL
 ) {
+  interval <- match.arg(interval)
+
+  if (is.null(data)) {
+    data <- if (interval == "week") weekly_data else monthly_data
+  }
+
   if (nrow(data) == 0) {
     return(no_data_flextable())
   }
@@ -453,8 +581,17 @@ out_tab_project_weekly_review <- function(
     end_date <- max(data$period_start, na.rm = TRUE)
   }
   if (is.null(start_date)) {
-    start_date <- end_date - weeks(12)
+    start_date <- if (interval == "week") {
+      end_date - weeks(periods_back)
+    } else {
+      end_date %m-% months(periods_back)
+    }
   }
+
+  # Column-header / title date format: day-and-month for weeks, but just
+  # month-and-year for months (a monthly period_start is always the 1st,
+  # so a day component would just show a redundant "01" on every header).
+  period_label_fmt <- if (interval == "week") "%d %b" else "%b %Y"
 
   dict <- get_all_indicators_dict()
   if (core_only) {
@@ -469,10 +606,10 @@ out_tab_project_weekly_review <- function(
   matrix_data <- data %>%
     filter(period_start >= start_date & period_start <= end_date) %>%
     arrange(period_start) %>%
-    mutate(week_label = format(period_start, "%d %b")) %>%
-    select(week_label, any_of(ind_keys)) %>%
+    mutate(period_label = format(period_start, period_label_fmt)) %>%
+    select(period_label, any_of(ind_keys)) %>%
     pivot_longer(
-      cols = -week_label,
+      cols = -period_label,
       names_to = "Indicator_Key",
       values_to = "Value"
     ) %>%
@@ -483,9 +620,9 @@ out_tab_project_weekly_review <- function(
         TRUE ~ formatC(Value, format = "f", digits = 0, big.mark = ",")
       )
     ) %>%
-    select(week_label, Indicator_Key, Val) %>%
+    select(period_label, Indicator_Key, Val) %>%
     pivot_wider(
-      names_from = week_label,
+      names_from = period_label,
       values_from = Val,
       values_fill = "-"
     )
@@ -494,12 +631,12 @@ out_tab_project_weekly_review <- function(
     left_join(matrix_data, by = "Indicator_Key") %>%
     select(-Indicator_Key, -is_core)
 
-  week_cols <- setdiff(names(final_df), c("Group", "Indicator_Name"))
+  period_cols <- setdiff(names(final_df), c("Group", "Indicator_Name"))
   title_text <- paste0(
     "Project Trend: ",
-    format(start_date, "%d %b"),
+    format(start_date, period_label_fmt),
     " to ",
-    format(end_date, "%d %b %Y")
+    format(end_date, if (interval == "week") "%d %b %Y" else "%b %Y")
   )
 
   ft <- final_df %>%
@@ -512,27 +649,38 @@ out_tab_project_weekly_review <- function(
     fontsize(size = font_size, part = "all")
 
   if (!is.null(table_width)) {
-    col_count <- length(week_cols)
+    col_count <- length(period_cols)
     ft <- ft %>%
       width(j = 1, width = table_width * 0.3) %>%
-      width(j = week_cols, width = (table_width * 0.7) / col_count)
+      width(j = period_cols, width = (table_width * 0.7) / col_count)
   }
 
   return(ft)
 }
+# out_tab_project_weekly_review(data = weekly_data, end_date = as.Date("2026-06-30"), start_date = as.Date("2026-01-01"), periods_back = 12, interval = "week", core_only = TRUE, font_size = 8, table_width = 10)
 
 
-#' Generate a transposed geographic indicator table with optional Total column
+#' Generic transposed table of caller-specified indicators (rows) by EA or
+#' village (columns, via id_col), with an optional Total column - percentages
+#' /proportions are averaged in the Total, counts are summed.
 #'
-#' @param data Master dataframe (ea_data or village_data).
-#' @param indicators Character vector. The exact column names to include as rows.
+#' @param data Master dataframe (ea_data or village_data). Defaults to
+#'   village_data.
+#' @param indicators Character vector. The exact column names to include as
+#'   rows. Defaults to the core indicator set from get_all_indicators_dict(),
+#'   intersected with the columns actually present in data (same expression
+#'   used at the real call site in 05_run_outputs.R).
+#' @param title Character. Table header title (default "Geographic Performance Indicators").
 #' @param areas Character vector. List of EAs or Villages to include. If NULL, includes all.
 #' @param id_col Character. The name of the ID column ("record_id" or "village").
 #' @param show_total Logical. If TRUE, adds a 'Total' column to the right.
 #' @param font_size Numeric. Base font size (default 8).
 out_tab_geo_indicators <- function(
-  data,
-  indicators,
+  data = village_data,
+  indicators = get_all_indicators_dict() %>%
+    filter(is_core == TRUE) %>%
+    pull(Indicator_Key) %>%
+    intersect(names(data)),
   title = "Geographic Performance Indicators",
   areas = NULL,
   id_col = "village",
@@ -627,11 +775,15 @@ out_tab_geo_indicators <- function(
 
   return(ft)
 }
+# out_tab_geo_indicators(data = village_data, indicators = c("reg", "pop_elig_new"), title = "Geographic Performance Indicators", areas = NULL, id_col = "village", show_total = TRUE, font_size = 8)
 
 
 ## Plots -------------------------------------
 
-#' Plot weekly activity: Households, Registrations, and TPT starts
+#' Line plot of weekly household enumeration, registration, and TPT
+#' initiation counts over time. Indicators: Households Enumerated, People
+#' Registered, People Started on TPT.
+#'
 #' @param data Dataframe. Defaults to weekly_data from the environment
 out_plot_weekly_activity <- function(data = weekly_data) {
   if (nrow(data) == 0) {
@@ -682,27 +834,64 @@ out_plot_weekly_activity <- function(data = weekly_data) {
       legend.position = "bottom"
     )
 }
+# out_plot_weekly_activity(data = weekly_data)
 
 
 #' Plot core weekly quality indicators (Matches Core Table)
-#' @param data Dataframe. Defaults to weekly_long
-#' @param end_date Date. Optional; defaults to max date in data.
-#' @param start_date Date. Optional; defaults to 12 weeks prior to end_date.
-#' @param date_breaks Character. Spacing for the x-axis ticks (default "1 week").
+#'
+#' Line plot of core quality indicators for the screening team over time
+#' (week or month increments), with percentage indicators in a lower panel
+#' tracked against numeric activity indicators in an upper panel. Core
+#' indicators: Registered, Target Population (Eligible), Number Missing
+#' (upper panel, counts); X-Ray Performed (%), Sputum Tested (%), TB
+#' Decision (%), TB Decision Complete (%), TST Read (%), TPT Assessed /
+#' Should Assess (%), Any Treatment (%) (lower panel, percentages).
+#'
+#' @param data Dataframe. Defaults to weekly_long (interval = "week") or
+#'   monthly_long (interval = "month").
+#' @param end_date Date. Optional; defaults to max date in data - deliberately
+#'   anchored to the latest date actually present in the data rather than
+#'   Sys.Date(), so a report run before this period's data has landed still
+#'   shows a complete final period instead of a blank one.
+#' @param start_date Date. Optional; defaults to periods_back periods prior to end_date.
+#' @param periods_back Numeric. How many periods (see interval) to show before
+#'   end_date when start_date isn't given (default 12).
+#' @param interval Character. "week" or "month" - which pre-aggregated dataset
+#'   and period length periods_back counts in (default "week"). Quarter/year
+#'   aren't available - build_time_agg() in 03_tidy_data.R only produces
+#'   week/month aggregates.
+#' @param date_breaks Character. Spacing for the x-axis ticks. Defaults to "1
+#'   week" or "1 month" to match interval, unless overridden.
 #' @param base_size Numeric. Base font size for the plot (default 11).
 out_plot_weekly_quality <- function(
-  data = weekly_long,
+  data = NULL,
   end_date = NULL,
   start_date = NULL,
-  date_breaks = "1 week",
+  periods_back = 12,
+  interval = c("week", "month"),
+  date_breaks = NULL,
   base_size = 11
 ) {
+  interval <- match.arg(interval)
+
+  if (is.null(data)) {
+    data <- if (interval == "week") weekly_long else monthly_long
+  }
+
   # 1. Date Handling
   if (is.null(end_date)) {
     end_date <- max(data$period_start, na.rm = TRUE)
   }
   if (is.null(start_date)) {
-    start_date <- end_date - weeks(12)
+    start_date <- if (interval == "week") {
+      end_date - weeks(periods_back)
+    } else {
+      end_date %m-% months(periods_back)
+    }
+  }
+
+  if (is.null(date_breaks)) {
+    date_breaks <- if (interval == "week") "1 week" else "1 month"
   }
 
   # Smart date labels based on the requested breaks
@@ -758,10 +947,16 @@ out_plot_weekly_quality <- function(
       date_breaks = date_breaks,
       date_labels = date_labels
     ) +
+    # 2026-09: fixed - names previously didn't match get_all_indicators_dict()'s
+    # current Indicator_Name values (a prior rename left these stale), and
+    # "indianred" wasn't greyscale. Upper panel is deliberately greyscale
+    # (secondary/context indicators); the lower panel carries the viridis
+    # house palette for the primary percentage indicators.
     scale_color_manual(
       values = c(
-        "Participants Registered" = "grey70",
-        "Target Missed (Eligible - Registered)" = "indianred"
+        "Registered" = "grey50",
+        "Target Pop (Eligible)" = "grey80",
+        "Number Missing" = "grey20"
       )
     ) +
     theme_light(base_size = base_size) +
@@ -813,7 +1008,11 @@ out_plot_weekly_quality <- function(
       date_labels = date_labels
     ) +
     scale_color_viridis_d(option = "F", begin = 0.2, end = 0.8) +
-    labs(x = "Time (Weeks)", y = "Percentage (%)", color = "Indicator") +
+    labs(
+      x = if (interval == "week") "Time (Weeks)" else "Time (Months)",
+      y = "Percentage (%)",
+      color = "Indicator"
+    ) +
     theme_light(base_size = base_size) +
     theme(
       axis.text.x = element_text(angle = 45, hjust = 1),
@@ -830,9 +1029,14 @@ out_plot_weekly_quality <- function(
     rel_heights = c(0.3, 0.7)
   )
 }
+# out_plot_weekly_quality(data = weekly_long, end_date = as.Date("2026-06-30"), start_date = as.Date("2026-01-01"), periods_back = 12, interval = "week", date_breaks = "1 week", base_size = 11)
 
 
-#' Plot monthly follow-up and clinical quality indicators with event annotations
+#' Line plot of monthly follow-up/clinical quality indicators over time, with
+#' event annotations. Indicators: NTP Outcome Recorded, NLP Outcome
+#' Recorded, TPT Assessed / Should Assess, TPT Started / Eligible, Eligible
+#' among Started.
+#'
 #' @param data Dataframe. Defaults to monthly_long from the environment
 out_plot_monthly_quality_indicators <- function(data = monthly_long) {
   # 1. Internal configuration: Programmatic Events
@@ -911,11 +1115,13 @@ out_plot_monthly_quality_indicators <- function(data = monthly_long) {
       vjust = 1
     )
 }
+# out_plot_monthly_quality_indicators(data = monthly_long)
 
 
 # --- DEMOGRAPHICS ------------------------------------------------------------
 
-#' Plot age pyramid of PEARL participants
+#' Age-sex population pyramid of all PEARL participants.
+#'
 #' @param data Dataframe. Defaults to screening_data from the environment
 out_plot_age_pyramid <- function(data = screening_data) {
   # Data manipulation included inside for encapsulation
@@ -925,7 +1131,7 @@ out_plot_age_pyramid <- function(data = screening_data) {
 
   # Construct output
   age_pyramid(plot_data, age_group = "age_cat", split_by = "en_sex") +
-    scale_fill_viridis_d(option = "F", begin = 0.4, end = 0.6) +
+    scale_fill_viridis_d(option = "F", begin = 0.2, end = 0.8) +
     labs(
       title = "PEARL participant population pyramid",
       x = "Count",
@@ -934,11 +1140,14 @@ out_plot_age_pyramid <- function(data = screening_data) {
     theme_light() +
     theme(legend.title = element_blank())
 }
+# out_plot_age_pyramid(data = screening_data)
 
 
 # --- GEOGRAPHIC COVERAGE AND SCREENING ---------------------------------------
 
-#' Plot registration coverage by Enumeration Area (EA)
+#' Bar chart of registration coverage (registered / eligible) by Enumeration
+#' Area, colored by village.
+#'
 #' @param data Dataframe. Defaults to ea_data from the environment
 out_plot_ea_coverage <- function(data = ea_data) {
   # Data manipulation
@@ -977,9 +1186,12 @@ out_plot_ea_coverage <- function(data = ea_data) {
       axis.text.x = element_text(angle = 90, hjust = 1)
     )
 }
+# out_plot_ea_coverage(data = ea_data)
 
 
-#' Plot cumulative registration coverage by village over time
+#' Line plot of cumulative proportion of village population screened over
+#' time, by village. Denominator: 2023 census population, excluding ages 0-2.
+#'
 #' @param data Dataframe. Defaults to village_data_cum from the environment
 out_plot_village_cumulative_coverage <- function(data = village_data_cum) {
   # Data manipulation for clean time-series visualization
@@ -1018,9 +1230,11 @@ out_plot_village_cumulative_coverage <- function(data = village_data_cum) {
       axis.text.x = element_text(angle = 45, hjust = 1)
     )
 }
+# out_plot_village_cumulative_coverage(data = village_data_cum)
 
 
-#' Plot cumulative stacked area of screening progress by village
+#' Line plot of cumulative number of people screened over time, by village.
+#'
 #' @param data Dataframe. Defaults to village_data_cum from the environment
 #' @param max_y Numeric. The upper limit for the Y axis (default 30000)
 out_plot_village_cumulative_screening <- function(
@@ -1054,9 +1268,11 @@ out_plot_village_cumulative_screening <- function(
       legend.position = "right"
     )
 }
+# out_plot_village_cumulative_screening(data = village_data_cum, max_y = 30000)
 
 
-#' Plot map of screening counts by Enumeration Area (EA) in Betio
+#' Choropleth map of raw screening counts by Enumeration Area in Betio.
+#'
 #' @param data sf object. Defaults to layer_betio_ea_3832 from the environment
 out_plot_betio_screening_map <- function(data = layer_betio_ea_3832) {
   if (nrow(data) == 0) {
@@ -1088,9 +1304,12 @@ out_plot_betio_screening_map <- function(data = layer_betio_ea_3832) {
       axis.ticks = element_blank()
     )
 }
+# out_plot_betio_screening_map(data = layer_betio_ea_3832)
 
 
-#' Plot map of screening coverage (proportion) by Enumeration Area (EA) in Betio
+#' Choropleth map of screening coverage (proportion registered/eligible) by
+#' Enumeration Area in Betio.
+#'
 #' @param data sf object. Defaults to layer_betio_ea_3832 from the environment
 out_plot_betio_coverage_map <- function(data = layer_betio_ea_3832) {
   if (nrow(data) == 0) {
@@ -1130,9 +1349,14 @@ out_plot_betio_coverage_map <- function(data = layer_betio_ea_3832) {
       axis.ticks = element_blank()
     )
 }
+# out_plot_betio_coverage_map(data = layer_betio_ea_3832)
 
 
-#' Plot cumulative screening coverage using project-defined eligible population
+#' Line plot of cumulative proportion of village population screened over
+#' time, by village, restricted to villages with >= 100 registrations.
+#' Denominator: project-defined eligible population (not the 2023 census -
+#' see out_plot_village_cumulative_coverage for that version).
+#'
 #' @param data Dataframe. Defaults to village_data_cum from the environment
 #' @param v_data Dataframe. Defaults to village_data from the environment
 out_plot_village_cumulative_eligible_coverage <- function(
@@ -1196,9 +1420,11 @@ out_plot_village_cumulative_eligible_coverage <- function(
       legend.position = "right"
     )
 }
+# out_plot_village_cumulative_eligible_coverage(data = village_data_cum, v_data = village_data)
 
 
-#' Plot point map of households over EA boundaries in Betio
+#' Point map of household locations and status over EA boundaries in Betio.
+#'
 #' @param ea_layer sf object. Defaults to layer_betio_ea_3832
 #' @param hh_layer sf object. Defaults to layer_hh_betio_3832
 out_plot_betio_household_points <- function(
@@ -1214,7 +1440,7 @@ out_plot_betio_household_points <- function(
     geom_sf(data = ea_layer, fill = "white", color = "black") +
     # Overlay household points colored by status
     geom_sf(data = hh_layer, aes(color = hh_status), size = 1, alpha = 0.8) +
-    scale_color_viridis_d(option = "D", name = "Household Status") +
+    scale_color_viridis_d(option = "F", begin = 0.2, end = 0.8, name = "Household Status") +
     labs(
       title = "Household Locations and Status: Betio",
       subtitle = "Points represent individual dwellings over EA boundaries"
@@ -1226,6 +1452,7 @@ out_plot_betio_household_points <- function(
       axis.ticks = element_blank()
     )
 }
+# out_plot_betio_household_points(ea_layer = layer_betio_ea_3832, hh_layer = layer_hh_betio_3832)
 
 # TODO
 # Adding a Basemap or Context: While the EA boundaries give structure, it can be
@@ -1238,19 +1465,63 @@ out_plot_betio_household_points <- function(
 
 ## Plots -------------------------------------
 
-#' Plot weekly proportion of TB outcomes for the last 6 months
-#' @param data Dataframe. Defaults to screening_data from the environment
-out_plot_tb_outcome_proportions_6m <- function(data = screening_data) {
+#' Column chart of TB screening outcomes over time, as proportions of the
+#' total screened in each time period. TB screening outcome indicators (TB 
+#' decision = presumptive, uncertain, ruled out or missing if NA) as a
+#' proportion of number registered in the period.
+#'
+#' @param data Dataframe. Defaults to weekly_data (interval = "week") or
+#'   monthly_data (interval = "month").
+#' @param end_date Date. Optional; defaults to max date in data - deliberately
+#'   anchored to the latest date actually present in the data rather than
+#'   Sys.Date(), so a report run before this period's data has landed still
+#'   shows a complete final period instead of a blank one.
+#' @param start_date Date. Optional; defaults to periods_back periods prior to end_date.
+#' @param periods_back Numeric. How many periods (see interval) to show before
+#'   end_date when start_date isn't given (default 12).
+#' @param interval Character. "week" or "month" (default "week", matching
+#'   the previous behavior's bar granularity). Quarter/year aren't available
+#'   yet - build_time_agg() in 03_tidy_data.R only produces week/month.
+out_plot_tb_outcome_proportions_time <- function(
+  data = NULL,
+  end_date = NULL,
+  start_date = NULL,
+  periods_back = 12,
+  interval = c("week", "month")
+) {
+  interval <- match.arg(interval)
+
+  if (is.null(data)) {
+    data <- if (interval == "week") weekly_data else monthly_data
+  }
+
   if (nrow(data) == 0) {
     return(no_data_plot())
   }
 
-  # Data manipulation: Filter for last 6 months and handle factors
+  if (is.null(end_date)) {
+    end_date <- max(data$period_start, na.rm = TRUE)
+  }
+  if (is.null(start_date)) {
+    start_date <- if (interval == "week") {
+      end_date - weeks(periods_back)
+    } else {
+      end_date %m-% months(periods_back)
+    }
+  }
+
   plot_data <- data %>%
-    filter(week_reg >= (max(week_reg[!is.na(week_reg)]) %m-% months(6))) %>%
+    filter(period_start >= start_date & period_start <= end_date) %>%
+    select(period_start, tbdec_prestb, tbdec_ro, tbdec_unc, tbdec_missing) %>%
+    pivot_longer(-period_start, names_to = "tb_decision", values_to = "count") %>%
     mutate(
-      tb_decision = as.character(tb_decision),
-      tb_decision = replace(tb_decision, is.na(tb_decision), "Missing"),
+      tb_decision = recode(
+        tb_decision,
+        tbdec_missing = "Missing",
+        tbdec_unc = "TB status uncertain",
+        tbdec_ro = "Ruled out TB",
+        tbdec_prestb = "Presumptive TB"
+      ),
       tb_decision = factor(
         tb_decision,
         levels = c(
@@ -1261,13 +1532,15 @@ out_plot_tb_outcome_proportions_6m <- function(data = screening_data) {
         )
       )
     ) %>%
-    group_by(week_reg, tb_decision) %>%
-    summarise(count = n(), .groups = 'drop') %>%
-    group_by(week_reg) %>%
-    mutate(proportion = count / sum(count))
+    group_by(period_start) %>%
+    mutate(proportion = count / sum(count)) %>%
+    ungroup()
+
+  date_breaks <- if (interval == "week") "1 week" else "1 month"
+  date_labels <- if (interval == "week") "%Y-%m-%d" else "%b %Y"
 
   # Construct output
-  ggplot(plot_data, aes(x = week_reg, y = proportion, fill = tb_decision)) +
+  ggplot(plot_data, aes(x = period_start, y = proportion, fill = tb_decision)) +
     geom_bar(stat = "identity") +
     scale_fill_manual(
       values = c(
@@ -1277,50 +1550,95 @@ out_plot_tb_outcome_proportions_6m <- function(data = screening_data) {
         "Presumptive TB" = "lightcoral"
       )
     ) +
-    scale_x_date(date_labels = "%Y-%m-%d", date_breaks = "1 week") +
-    scale_y_continuous(labels = label_percent(accuracy = 1)) + # Refactor: 0.25 -> 25%
+    scale_x_date(date_labels = date_labels, date_breaks = date_breaks) +
+    scale_y_continuous(labels = label_percent(accuracy = 1)) +
     labs(
-      x = "Week of Registration",
+      x = if (interval == "week") "Week of Registration" else "Month of Registration",
       y = "Proportion",
-      title = "Weekly proportion of TB outcome (Last 6 Months)",
+      title = paste0("TB Screening Outcome Proportions by ", str_to_title(interval)),
       fill = "TB decision"
     ) +
     theme_light() +
     theme(axis.text.x = element_text(angle = 45, hjust = 1))
 }
+# out_plot_tb_outcome_proportions_time(data = weekly_data, end_date = as.Date("2026-06-30"), start_date = as.Date("2026-01-01"), periods_back = 12, interval = "week")
 
 
-#' Plot weekly proportion of TST results for the last 6 months
-#' @param data Dataframe. Defaults to screening_data from the environment
-out_plot_tst_proportions_6m <- function(data = screening_data) {
+#' Column chart of TST screening results over time, as proportions of the
+#' total screened in each time period. TST outcome indicators (TST = positive, 
+#' negative, missing) as a proportion of number registered in the period.
+#'
+#' @param data Dataframe. Defaults to weekly_data (interval = "week") or
+#'   monthly_data (interval = "month").
+#' @param end_date Date. Optional; defaults to max date in data - deliberately
+#'   anchored to the latest date actually present in the data rather than
+#'   Sys.Date(), so a report run before this period's data has landed still
+#'   shows a complete final period instead of a blank one.
+#' @param start_date Date. Optional; defaults to periods_back periods prior to end_date.
+#' @param periods_back Numeric. How many periods (see interval) to show before
+#'   end_date when start_date isn't given (default 12).
+#' @param interval Character. "week" or "month" (default "week", matching
+#'   the previous behavior's bar granularity). Quarter/year aren't available
+#'   yet - build_time_agg() in 03_tidy_data.R only produces week/month.
+out_plot_tst_proportions_time <- function(
+  data = NULL,
+  end_date = NULL,
+  start_date = NULL,
+  periods_back = 12,
+  interval = c("week", "month")
+) {
+  interval <- match.arg(interval)
+
+  if (is.null(data)) {
+    data <- if (interval == "week") weekly_data else monthly_data
+  }
+
   if (nrow(data) == 0) {
     return(no_data_plot())
   }
 
-  # Data manipulation: Filter for 6-month window and handle factor levels
+  if (is.null(end_date)) {
+    end_date <- max(data$period_start, na.rm = TRUE)
+  }
+  if (is.null(start_date)) {
+    start_date <- if (interval == "week") {
+      end_date - weeks(periods_back)
+    } else {
+      end_date %m-% months(periods_back)
+    }
+  }
+
   plot_data <- data %>%
-    filter(week_reg >= (max(week_reg[!is.na(week_reg)]) %m-% months(6))) %>%
+    filter(period_start >= start_date & period_start <= end_date) %>%
+    select(period_start, tst_pos, tst_neg, tst_missing) %>%
+    pivot_longer(
+      -period_start,
+      names_to = "tst_read_positive",
+      values_to = "count"
+    ) %>%
     mutate(
-      tst_read_positive = as.character(tst_read_positive),
-      tst_read_positive = replace(
+      tst_read_positive = recode(
         tst_read_positive,
-        is.na(tst_read_positive),
-        "Missing"
+        tst_missing = "Missing",
+        tst_neg = "Negative TST",
+        tst_pos = "Positive TST"
       ),
       tst_read_positive = factor(
         tst_read_positive,
         levels = c("Missing", "Negative TST", "Positive TST")
       )
     ) %>%
-    group_by(week_reg, tst_read_positive) %>%
-    summarise(count = n(), .groups = 'drop') %>%
-    group_by(week_reg) %>%
-    mutate(proportion = count / sum(count))
+    group_by(period_start) %>%
+    mutate(proportion = count / sum(count)) %>%
+    ungroup()
+
+  date_breaks <- if (interval == "week") "1 week" else "1 month"
+  date_labels <- if (interval == "week") "%Y-%m-%d" else "%b %Y"
 
   # Construct output
   ggplot(
     plot_data,
-    aes(x = week_reg, y = proportion, fill = tst_read_positive)
+    aes(x = period_start, y = proportion, fill = tst_read_positive)
   ) +
     geom_bar(stat = "identity") +
     scale_fill_manual(
@@ -1330,20 +1648,24 @@ out_plot_tst_proportions_6m <- function(data = screening_data) {
         "Positive TST" = "lightcoral"
       )
     ) +
-    scale_x_date(date_labels = "%Y-%m-%d", date_breaks = "1 week") +
+    scale_x_date(date_labels = date_labels, date_breaks = date_breaks) +
     scale_y_continuous(labels = label_percent(accuracy = 1)) +
     labs(
-      x = "Week of Registration",
+      x = if (interval == "week") "Week of Registration" else "Month of Registration",
       y = "Proportion",
-      title = "Weekly proportion of TST result (Last 6 Months)",
+      title = paste0("TST Result Proportions by ", str_to_title(interval)),
       fill = "TST result"
     ) +
     theme_light() +
     theme(axis.text.x = element_text(angle = 45, hjust = 1))
 }
+# out_plot_tst_proportions_time(data = weekly_data, end_date = as.Date("2026-06-30"), start_date = as.Date("2026-01-01"), periods_back = 12, interval = "week")
 
 
-#' Plot TB screening outcomes (presumptive and confirmed) by age and sex
+#' Bar chart of TB screening/confirmation prevalence by age group and sex,
+#' faceted into "Screened Positive" and "Confirmed TB" panels. Denominator:
+#' individuals with a completed TB diagnostic decision.
+#'
 #' @param data Dataframe. Defaults to screening_data from the environment
 out_plot_tb_yield_demographics <- function(data = screening_data) {
   # 1. Data Preparation: Vectorized Prevalence Calculation
@@ -1413,9 +1735,11 @@ out_plot_tb_yield_demographics <- function(data = screening_data) {
       axis.text.x = element_text(angle = 45, hjust = 1)
     )
 }
+# out_plot_tb_yield_demographics(data = screening_data)
 
 
-#' Plot TST positivity prevalence by age category
+#' Bar chart of TST positivity prevalence by age category.
+#'
 #' @param data Dataframe. Defaults to screening_data from the environment
 out_plot_tst_positivity_by_age <- function(data = screening_data) {
   # Data manipulation: Calculate prevalence as a decimal (0-1)
@@ -1449,9 +1773,13 @@ out_plot_tst_positivity_by_age <- function(data = screening_data) {
     ) +
     theme_light()
 }
+# out_plot_tst_positivity_by_age(data = screening_data)
 
 
-#' Plot TST positivity proportions by age for 5mm and 10mm thresholds
+#' Line plot of TST positivity proportions by age category at the >=5mm and
+#' >=10mm reading thresholds, with dashed lines showing project-wide
+#' averages for each threshold.
+#'
 #' @param data Dataframe. Defaults to screening_data from the environment
 out_plot_tst_thresholds_age <- function(data = screening_data) {
   if (nrow(data) == 0) {
@@ -1529,9 +1857,12 @@ out_plot_tst_thresholds_age <- function(data = screening_data) {
     theme_light() +
     theme(legend.position = "top")
 }
+# out_plot_tst_thresholds_age(data = screening_data)
 
 
-#' Plot TST positivity prevalence by age group and sex
+#' Bar chart of TST positivity prevalence by age group and sex. Denominator:
+#' individuals with a successfully read TST.
+#'
 #' @param data Dataframe. Defaults to screening_data from the environment
 out_plot_tst_yield_demographics <- function(data = screening_data) {
   # 1. Data Preparation: Calculate prevalence among those with a valid TST read
@@ -1580,11 +1911,14 @@ out_plot_tst_yield_demographics <- function(data = screening_data) {
       axis.text.x = element_text(angle = 45, hjust = 1)
     )
 }
+# out_plot_tst_yield_demographics(data = screening_data)
 
 
 ## Tables -------------------------------------
 
-#' Generate a detailed flextable of TST positivity by age and sex (Landscape Optimized)
+#' Table of TST positivity counts (n) and percentage by age group, split
+#' into male/female columns, each with a valid-N column.
+#'
 #' @param data Dataframe. Defaults to screening_data from the environment
 out_tab_tst_yield_demographics_table <- function(data = screening_data) {
   tst_summary_wide <- data %>%
@@ -1660,9 +1994,13 @@ out_tab_tst_yield_demographics_table <- function(data = screening_data) {
 
   return(ft)
 }
+# out_tab_tst_yield_demographics_table(data = screening_data)
 
 
-#' Generate a flextable of the Sputum and GeneXpert diagnostic cascade
+#' Table of the sputum/GeneXpert diagnostic cascade by age group: registered,
+#' sputum collected, sputum tested, Xpert resulted, Xpert positive. Rows for
+#' each age group, plus "Ages 10+" and "All" summary rows.
+#'
 #' @param data Dataframe. Defaults to screening_data from the environment
 out_tab_sputum_cascade <- function(data = screening_data) {
   if (nrow(data) == 0) {
@@ -1721,9 +2059,12 @@ out_tab_sputum_cascade <- function(data = screening_data) {
 
   return(ft)
 }
+# out_tab_sputum_cascade(data = screening_data)
 
 
-#' Generate a flextable of quarterly TB referral outcomes
+#' Table of quarterly TB referral outcomes (NTP diagnosis categories) for
+#' people with a Presumptive TB decision, with a Total column and row.
+#'
 #' @param data Dataframe. Defaults to screening_data from the environment
 out_tab_tb_referral_outcomes <- function(data = screening_data) {
   if (nrow(data) == 0) {
@@ -1798,9 +2139,13 @@ out_tab_tb_referral_outcomes <- function(data = screening_data) {
 
   return(ft)
 }
+# out_tab_tb_referral_outcomes(data = screening_data)
 
 
-#' Generate a flextable of TB screening yield and NNS by age group
+#' Table of TB screening yield and number-needed-to-screen (NNS) by age
+#' group, comparing three screening algorithms: symptom-only, X-ray (10+),
+#' and PEARL-cumulative.
+#'
 #' @param data Dataframe. Defaults to screening_data from the environment
 out_tab_tb_yield_efficiency <- function(data = screening_data) {
   if (nrow(data) == 0) {
@@ -1899,9 +2244,12 @@ out_tab_tb_yield_efficiency <- function(data = screening_data) {
 
   return(ft)
 }
+# out_tab_tb_yield_efficiency(data = screening_data)
 
 
-#' Generate a detailed flextable of TB yield (Presumptive & Confirmed) by age and sex (Landscape Optimized)
+#' Table of TB presumptive and confirmed case counts and percentages by age
+#' group, split into male/female columns with a valid-outcome-N column each.
+#'
 #' @param data Dataframe. Defaults to screening_data from the environment
 out_tab_tb_yield_demographics_table <- function(data = screening_data) {
   if (nrow(data) == 0) {
@@ -1997,13 +2345,16 @@ out_tab_tb_yield_demographics_table <- function(data = screening_data) {
 
   return(ft)
 }
+# out_tab_tb_yield_demographics_table(data = screening_data)
 
 
 # --- LEPROSY AND PREVENTION SCREENING OUTCOMES -------------------------------
 
 ## Plots -------------------------------------
 
-#' Plot Leprosy screening outcomes (presumptive and confirmed) by age and sex
+#' Bar chart of leprosy screening/confirmation prevalence by age group and
+#' sex, faceted into "Screened Positive" and "Confirmed Leprosy" panels.
+#'
 #' @param data Dataframe. Defaults to screening_data from the environment
 out_plot_lep_yield_demographics <- function(data = screening_data) {
   # 1. Data Preparation: Use vectorized mean for prevalence
@@ -2072,9 +2423,11 @@ out_plot_lep_yield_demographics <- function(data = screening_data) {
       axis.text.x = element_text(angle = 45, hjust = 1)
     )
 }
+# out_plot_lep_yield_demographics(data = screening_data)
 
 
-#' Plot treatment proportions from screening activity over a chosen time interval
+#' Column chart of treatment-type proportions (No treatment, MDT, TBRx, TPT,
+#' SDR) among all registered participants, bucketed by month/quarter/year.
 #'
 #' @param data Dataframe. Defaults to screening_data from the environment.
 #' @param start_date Date. Optional; filters data from this date (inclusive). Defaults to the earliest en_date_visit.
@@ -2166,11 +2519,14 @@ out_plot_treatment_proportions_time <- function(
       axis.text.x = element_text(angle = 45, hjust = 1)
     )
 }
+# out_plot_treatment_proportions_time(data = screening_data, start_date = as.Date("2023-01-01"), end_date = as.Date("2026-06-30"), interval = "month")
 
 
 ## Tables -------------------------------------
 
-#' Generate a detailed flextable of Leprosy yield (Presumptive & Confirmed) by age and sex (Landscape Optimized)
+#' Table of leprosy presumptive and confirmed case counts and percentages by
+#' age group, split into male/female columns with a valid-N column each.
+#'
 #' @param data Dataframe. Defaults to screening_data from the environment
 out_tab_lep_yield_demographics_table <- function(data = screening_data) {
   lep_summary_wide <- data %>%
@@ -2265,9 +2621,12 @@ out_tab_lep_yield_demographics_table <- function(data = screening_data) {
 
   return(ft)
 }
+# out_tab_lep_yield_demographics_table(data = screening_data)
 
 
-#' Generate a flextable of quarterly Leprosy referral outcomes
+#' Table of quarterly leprosy referral outcomes (NLP diagnosis categories)
+#' for people referred for leprosy, with a Total column and row.
+#'
 #' @param data Dataframe. Defaults to screening_data from the environment
 out_tab_lep_referral_outcomes <- function(data = screening_data) {
   if (nrow(data) == 0) {
@@ -2342,21 +2701,82 @@ out_tab_lep_referral_outcomes <- function(data = screening_data) {
 
   return(ft)
 }
+# out_tab_lep_referral_outcomes(data = screening_data)
 
 
-#' Generate an annual leprosy-focused indicator table
-#' @param data_hh Dataframe. Defaults to household_data.
-#' @param data_scr Dataframe. Defaults to screening_data.
-#' @param start_year Numeric. Optional; defaults to min year in data.
-#' @param end_year Numeric. Optional; defaults to max year in data.
-#' @param font_size Numeric. Base font size (default 9).
-#' @param table_width Numeric. Total table width in inches (default NULL).
-#' Generate a leprosy-focused indicator table aggregated over a chosen time interval
+#' Shared household-level leprosy indicator summary. Caller must group_by()
+#' the desired key (a time period, or a village/"Other" group) before piping
+#' in. Indicators: Enumerated (HH), Enumerated (Pop), Eligible (Pop).
 #'
-#' Aggregates household and screening/leprosy metrics into year, quarter, or
-#' month buckets across a date range. Formerly `out_tab_lep_annual()`
-#' (year-only); renamed and extended 2026-09 to support quarter/month
-#' granularity for grant reporting periods.
+#' Used by both out_tab_lep_ind_time (time axis) and out_tab_lep_village
+#' (village axis) so the indicator definitions live in one place - mirrors
+#' the xxx_by_key() helper pattern already used in 03_tidy_data.R's
+#' build_time_agg()/build_area_agg() (e.g. tb_dist_by_key()).
+#'
+#' TODO: move into build_time_agg()/build_area_agg() as a proper
+#' lep_dist_by_key()-style pre-aggregated column set (like the existing TB/
+#' TST breakdowns), so this lives with the other indicator aggregators in
+#' 03_tidy_data.R instead of here. This is a pragmatic interim fix.
+#'
+#' @param df_hh_grouped Household data, already piped through group_by().
+lep_hh_metrics_by_key <- function(df_hh_grouped) {
+  df_hh_grouped %>%
+    summarise(
+      "Enumerated (HH)" = n(),
+      "Enumerated (Pop)" = sum(hh_size, na.rm = TRUE),
+      "Eligible (Pop)" = sum(hh_size_elig, na.rm = TRUE),
+      .groups = "drop"
+    )
+}
+
+#' Shared screening/leprosy-level indicator summary. Caller must group_by()
+#' the desired key before piping in. Indicators: Registered, Screened for
+#' Leprosy, Leprosy Referred, Diag: Confirmed/Ruled out/Already on MDT/
+#' Pending/Missing, Any Treatment, Rx: MDT/SDR/TBRx/TPT/NR.
+#'
+#' See lep_hh_metrics_by_key() for the shared-helper rationale and TODO.
+#'
+#' @param df_scr_grouped Screening data, already piped through group_by().
+lep_scr_metrics_by_key <- function(df_scr_grouped) {
+  df_scr_grouped %>%
+    summarise(
+      "Registered" = n(),
+      "Screened for Leprosy" = sum(lepdec_bin, na.rm = TRUE),
+      "Leprosy Referred" = sum(referred_nlp == TRUE, na.rm = TRUE),
+      "Diag: Confirmed" = sum(nlp_diagnosis == "Confirmed", na.rm = TRUE),
+      "Diag: Ruled out" = sum(nlp_diagnosis == "Ruled out", na.rm = TRUE),
+      "Diag: Already on MDT" = sum(
+        nlp_diagnosis == "Already on MDT",
+        na.rm = TRUE
+      ),
+      "Diag: Pending/Other" = sum(
+        nlp_diagnosis %in%
+          c("Further review", "Contacted not reviewed", "Not yet contacted"),
+        na.rm = TRUE
+      ),
+      "Diag: Missing" = sum(
+        referred_nlp == TRUE & is.na(nlp_diagnosis),
+        na.rm = TRUE
+      ),
+      "Any Treatment" = sum(!is.na(calc_any_treatment), na.rm = TRUE),
+      "Rx: MDT" = sum(calc_any_treatment == "MDT", na.rm = TRUE),
+      "Rx: SDR" = sum(calc_any_treatment == "SDR", na.rm = TRUE),
+      "Rx: TBRx" = sum(calc_any_treatment == "TBRx", na.rm = TRUE),
+      "Rx: TPT" = sum(calc_any_treatment == "TPT", na.rm = TRUE),
+      "Rx: NR" = sum(
+        referred_nlp == TRUE & is.na(calc_any_treatment),
+        na.rm = TRUE
+      ),
+      .groups = "drop"
+    )
+}
+
+
+#' Table of household enumeration and leprosy screening/treatment indicators
+#' by time period (year, quarter, or month). Indicators: Enumerated (HH),
+#' Enumerated (Pop), Eligible (Pop); Registered, Screened for Leprosy,
+#' Leprosy Referred, Diag: Confirmed/Ruled out/Already on MDT/Pending/
+#' Missing, Any Treatment, Rx: MDT/SDR/TBRx/TPT/NR.
 #'
 #' @param data_hh Dataframe. Defaults to household_data.
 #' @param data_scr Dataframe. Defaults to screening_data.
@@ -2404,7 +2824,8 @@ out_tab_lep_ind_time <- function(
     )
   }
 
-  # 2. Custom Aggregation Logic
+  # 2. Aggregation via shared indicator helpers (see lep_hh_metrics_by_key()/
+  # lep_scr_metrics_by_key() above)
 
   # A. Household Metrics
   hh_metrics <- data_hh %>%
@@ -2414,12 +2835,7 @@ out_tab_lep_ind_time <- function(
       .order = floor_date(hh_date, unit = interval)
     ) %>%
     group_by(Period, .order) %>%
-    summarise(
-      "Enumerated (HH)" = n(),
-      "Enumerated (Pop)" = sum(hh_size, na.rm = TRUE),
-      "Eligible (Pop)" = sum(hh_size_elig, na.rm = TRUE),
-      .groups = "drop"
-    )
+    lep_hh_metrics_by_key()
 
   # B. Screening & Leprosy Metrics
   scr_metrics <- data_scr %>%
@@ -2429,41 +2845,7 @@ out_tab_lep_ind_time <- function(
       .order = floor_date(en_date_visit, unit = interval)
     ) %>%
     group_by(Period, .order) %>%
-    summarise(
-      "Registered" = n(),
-      "Screened for Leprosy" = sum(lepdec_bin, na.rm = TRUE),
-      "Leprosy Referred" = sum(referred_nlp == TRUE, na.rm = TRUE),
-
-      # Diagnosis Breakdown
-      "Diag: Confirmed" = sum(nlp_diagnosis == "Confirmed", na.rm = TRUE),
-      "Diag: Ruled out" = sum(nlp_diagnosis == "Ruled out", na.rm = TRUE),
-      "Diag: Already on MDT" = sum(
-        nlp_diagnosis == "Already on MDT",
-        na.rm = TRUE
-      ),
-      "Diag: Pending/Other" = sum(
-        nlp_diagnosis %in%
-          c("Further review", "Contacted not reviewed", "Not yet contacted"),
-        na.rm = TRUE
-      ),
-      "Diag: Missing" = sum(
-        referred_nlp == TRUE & is.na(nlp_diagnosis),
-        na.rm = TRUE
-      ),
-
-      # Treatment Breakdown
-      "Any Treatment" = sum(!is.na(calc_any_treatment), na.rm = TRUE),
-      "Rx: MDT" = sum(calc_any_treatment == "MDT", na.rm = TRUE),
-      "Rx: SDR" = sum(calc_any_treatment == "SDR", na.rm = TRUE),
-      "Rx: TBRx" = sum(calc_any_treatment == "TBRx", na.rm = TRUE),
-      "Rx: TPT" = sum(calc_any_treatment == "TPT", na.rm = TRUE),
-      "Rx: NR" = sum(
-        referred_nlp == TRUE & is.na(calc_any_treatment),
-        na.rm = TRUE
-      ),
-
-      .groups = "drop"
-    )
+    lep_scr_metrics_by_key()
 
   # 3. Combine, Calculate Totals, and Format
 
@@ -2560,18 +2942,22 @@ out_tab_lep_ind_time <- function(
 
   return(ft)
 }
+# out_tab_lep_ind_time(data_hh = household_data, data_scr = screening_data, start_date = as.Date("2023-01-01"), end_date = as.Date("2026-06-30"), interval = "year", font_size = 9, table_width = 10, return_data = FALSE)
 
 
-#' Generate a village-level leprosy-focused indicator table with "Other" category
-#'
-#' Filters source data by year range. Selected villages are shown individually;
-#' all other villages with data in that period are grouped into an "Other" column.
+#' Table of household enumeration and leprosy screening/treatment indicators
+#' by village, over a chosen date range. Named villages appear as individual
+#' columns; everyone from an unlisted village is grouped into "Other"; a
+#' "Total" column sums across all villages. Indicators: Enumerated (HH),
+#' Enumerated (Pop), Eligible (Pop); Registered, Screened for Leprosy,
+#' Leprosy Referred, Diag: Confirmed/Ruled out/Already on MDT/Pending/
+#' Missing, Any Treatment, Rx: MDT/SDR/TBRx/TPT/NR.
 #'
 #' @param data_hh Dataframe. Defaults to household_data.
 #' @param data_scr Dataframe. Defaults to screening_data.
-#' @param villages Character vector. Specific villages to disaggregate.
-#' @param start_year Numeric. Optional; filters data to year range.
-#' @param end_year Numeric. Optional; filters data to year range.
+#' @param villages Character vector. Specific villages to disaggregate; everyone else is grouped into "Other".
+#' @param start_date Date. Optional; defaults to 1 Jan of the earliest year present in data_scr$en_date_visit.
+#' @param end_date Date. Optional; defaults to 31 Dec of the latest year present in data_scr$en_date_visit.
 #' @param font_size Numeric. Base font size for the table (default 8).
 #' @param table_width Numeric. Total table width in inches (default NULL).
 #'
@@ -2580,8 +2966,8 @@ out_tab_lep_village <- function(
   data_hh = household_data,
   data_scr = screening_data,
   villages = NULL,
-  start_year = NULL,
-  end_year = NULL,
+  start_date = NULL,
+  end_date = NULL,
   font_size = 8,
   table_width = NULL
 ) {
@@ -2589,20 +2975,29 @@ out_tab_lep_village <- function(
     return(no_data_flextable())
   }
 
-  # 1. Date/Year Filtering Setup
-  if (is.null(end_year)) {
-    end_year <- max(year(data_scr$en_date_visit), na.rm = TRUE)
+  # 1. Date Range Setup - defaults span whole calendar years (1 Jan to 31
+  # Dec), matching the previous start_year/end_year behavior exactly
+  if (is.null(end_date)) {
+    end_date <- as.Date(paste0(
+      max(year(data_scr$en_date_visit), na.rm = TRUE),
+      "-12-31"
+    ))
   }
-  if (is.null(start_year)) {
-    start_year <- min(year(data_scr$en_date_visit), na.rm = TRUE)
+  if (is.null(start_date)) {
+    start_date <- as.Date(paste0(
+      min(year(data_scr$en_date_visit), na.rm = TRUE),
+      "-01-01"
+    ))
   }
-
-  years_range <- start_year:end_year
 
   # 2. Re-aggregate Household Metrics
   vh_metrics_long <- data_hh %>%
-    mutate(Year = year(hh_date)) %>%
-    filter(Year %in% years_range, hh_reached == TRUE, !is.na(hh_village_ea)) %>%
+    filter(
+      hh_date >= start_date,
+      hh_date <= end_date,
+      hh_reached == TRUE,
+      !is.na(hh_village_ea)
+    ) %>%
     # Assign 'Other' status to villages not in the focus list
     mutate(
       village_group = case_when(
@@ -2612,17 +3007,17 @@ out_tab_lep_village <- function(
       )
     ) %>%
     group_by(village = village_group) %>%
-    summarise(
-      "Enumerated (HH)" = n(),
-      "Eligible (Pop)" = sum(hh_size_elig, na.rm = TRUE),
-      .groups = "drop"
-    ) %>%
+    lep_hh_metrics_by_key() %>%
     pivot_longer(-village, names_to = "Indicator_Name", values_to = "Value")
 
   # 3. Re-aggregate Screening Metrics
   v_scr_metrics_long <- data_scr %>%
-    mutate(Year = year(en_date_visit)) %>%
-    filter(Year %in% years_range, !is.na(village), village != "") %>%
+    filter(
+      en_date_visit >= start_date,
+      en_date_visit <= end_date,
+      !is.na(village),
+      village != ""
+    ) %>%
     # Assign 'Other' status to villages not in the focus list
     mutate(
       village_group = case_when(
@@ -2632,36 +3027,7 @@ out_tab_lep_village <- function(
       )
     ) %>%
     group_by(village = village_group) %>%
-    summarise(
-      "Registered" = n(),
-      "Screened for Leprosy" = sum(lepdec_bin, na.rm = TRUE),
-      "Leprosy Referred" = sum(referred_nlp == TRUE, na.rm = TRUE),
-      "Diag: Confirmed" = sum(nlp_diagnosis == "Confirmed", na.rm = TRUE),
-      "Diag: Ruled out" = sum(nlp_diagnosis == "Ruled out", na.rm = TRUE),
-      "Diag: Already on MDT" = sum(
-        nlp_diagnosis == "Already on MDT",
-        na.rm = TRUE
-      ),
-      "Diag: Pending/Other" = sum(
-        nlp_diagnosis %in%
-          c("Further review", "Contacted not reviewed", "Not yet contacted"),
-        na.rm = TRUE
-      ),
-      "Diag: Missing" = sum(
-        referred_nlp == TRUE & is.na(nlp_diagnosis),
-        na.rm = TRUE
-      ),
-      "Any Treatment" = sum(!is.na(calc_any_treatment), na.rm = TRUE),
-      "Rx: MDT" = sum(calc_any_treatment == "MDT", na.rm = TRUE),
-      "Rx: SDR" = sum(calc_any_treatment == "SDR", na.rm = TRUE),
-      "Rx: TBRx" = sum(calc_any_treatment == "TBRx", na.rm = TRUE),
-      "Rx: TPT" = sum(calc_any_treatment == "TPT", na.rm = TRUE),
-      "Rx: NR" = sum(
-        referred_nlp == TRUE & is.na(calc_any_treatment),
-        na.rm = TRUE
-      ),
-      .groups = "drop"
-    ) %>%
+    lep_scr_metrics_by_key() %>%
     pivot_longer(-village, names_to = "Indicator_Name", values_to = "Value")
 
   # 4. Combine, Total, and Wide-Pivot
@@ -2701,7 +3067,13 @@ out_tab_lep_village <- function(
   other_col <- if ("Other" %in% names(final_df)) "Other" else NULL
   display_cols <- c(focus_cols, other_col, "Total")
 
-  title_text <- paste0("Leprosy Indicators (", start_year, "-", end_year, ")")
+  title_text <- paste0(
+    "Leprosy Indicators (",
+    format(start_date, "%Y"),
+    "-",
+    format(end_date, "%Y"),
+    ")"
+  )
 
   # 6. Flextable Rendering
   ft <- final_df %>%
@@ -2731,9 +3103,12 @@ out_tab_lep_village <- function(
 
   return(ft)
 }
+# out_tab_lep_village(data_hh = household_data, data_scr = screening_data, villages = NULL, start_date = as.Date("2025-01-01"), end_date = as.Date("2025-12-31"), font_size = 8, table_width = 10)
 
 
-#' Generate a flextable of treatment proportions (Counts and Row-wise %) over a chosen time interval
+#' Table of treatment-type counts and row-wise percentages (No treatment,
+#' MDT, TBRx, TPT, SDR, Any treatment) among all registered participants,
+#' bucketed by month/quarter/year, with a Total row.
 #'
 #' @param data Dataframe. Defaults to screening_data from the environment.
 #' @param start_date Date. Optional; filters data from this date (inclusive). Defaults to the earliest en_date_visit.
@@ -2870,6 +3245,7 @@ out_tab_treatment_proportions_time <- function(
 
   return(ft)
 }
+# out_tab_treatment_proportions_time(data = screening_data, start_date = as.Date("2023-01-01"), end_date = as.Date("2026-06-30"), interval = "month", return_data = FALSE)
 
 
 #' Write the leprosy grant report data package (xlsx) with one sheet per underlying table
@@ -2937,11 +3313,15 @@ out_xlsx_lri_report <- function(
 
   invisible(output_path)
 }
+# Note: unlike the plot/table exemplars above, this one writes a real file to disk.
+# out_xlsx_lri_report(data_hh = household_data, data_scr = screening_data, start_date = as.Date("2023-01-01"), end_date = as.Date("2026-06-30"), interval = "year", output_path = NULL)
 
 
 # --- SCABIES SCREENING OUTCOMES -----------------------------------------------
 
-#' Generate a flextable of Scabies prevalence by age group and sex
+#' Table of scabies prevalence (%) by age group and sex, with an Overall
+#' column and row.
+#'
 #' @param data Dataframe. Defaults to screening_data from the environment
 out_tab_scabies_prevalence_demographics <- function(data = screening_data) {
   scabies_data <- data %>%
@@ -3005,26 +3385,34 @@ out_tab_scabies_prevalence_demographics <- function(data = screening_data) {
 
   return(ft)
 }
+# out_tab_scabies_prevalence_demographics(data = screening_data)
 
 
 # --- TPT OUTPUTS ------------------------------------------------
 
-#' Plot TPT cascade: from TST positive to treatment completion
+#' Column chart of the TST-positive-to-TPT-completion cascade: number of
+#' patients at each stage - TST Positive, TST Positive with TB Ruled Out,
+#' Completed TPT Assessment, Eligible for TPT, Started TPT, [weeks_lag]+
+#' Weeks Since Starting, Treatment Outcome Assigned, Completed TPT.
+#'
 #' @param s_data Dataframe. Defaults to screening_data from the environment
 #' @param t_data Dataframe. Defaults to treatment_data from the environment
-#' @param weeks_lookback Numeric. Number of weeks to look back for the "expected outcome" cohort (default 16)
+#' @param weeks_lag Numeric. Minimum weeks since TPT start before a patient is
+#'   counted in the "expected outcome" cohort (default 16) - a cohort-maturity
+#'   cutoff (exclude anyone who hasn't had time to reach an outcome yet), the
+#'   same mechanism as weeks_lag in out_tab_tpt_outcomes_monthly and
+#'   out_tab_tpt_outcomes_by_symptoms.
 out_plot_tpt_cascade <- function(
   s_data = screening_data,
   t_data = treatment_data,
-  weeks_lookback = 16
+  weeks_lag = 16
 ) {
   if (nrow(s_data) == 0 && nrow(t_data) == 0) {
     return(no_data_plot())
   }
 
-  # Define the lookback date for the "Expected Outcome" cohort
-  # This uses the weeks_lookback parameter instead of a hard-coded value
-  lookback_date <- Sys.Date() - weeks(weeks_lookback)
+  # Cohort-maturity cutoff for the "Expected Outcome" stage below
+  lookback_date <- Sys.Date() - weeks(weeks_lag)
 
   # 1. Aggregate Screening-derived stages
   tpt_cascade_sd <- s_data %>%
@@ -3088,7 +3476,7 @@ out_plot_tpt_cascade <- function(
     "Started TPT" = "Started\nTPT",
     "4+ months since starting" = paste0(
       "≥",
-      round(weeks_lookback / 4),
+      round(weeks_lag / 4),
       " months\nsince start"
     ),
     "Treatment Outcome Assigned" = "Outcome\nassigned",
@@ -3110,7 +3498,7 @@ out_plot_tpt_cascade <- function(
       expand = expansion(mult = c(0.02, 0.10)),
       labels = comma
     ) +
-    scale_fill_viridis_d() +
+    scale_fill_viridis_d(option = "F", begin = 0.2, end = 0.8) +
     labs(title = "TST-Positive Treatment Cascade (All patients)", x = NULL) +
     theme_light() +
     theme(
@@ -3119,9 +3507,14 @@ out_plot_tpt_cascade <- function(
       legend.position = "none"
     )
 }
+# out_plot_tpt_cascade(s_data = screening_data, t_data = treatment_data, weeks_lag = 16)
 
 
-#' Plot TPT Risk Assessment Cascade
+#' Column chart of the TPT risk-assessment cascade: number of patients at
+#' each stage - TST Positive with TB Ruled Out, Risk Factors Assessed,
+#' Baseline ALT Needed/Requested/Resulted, Risk Group Assigned, Risk
+#' Matches Expected.
+#'
 #' @param data Dataframe. Defaults to screening_data from the environment
 out_plot_tpt_risk_cascade <- function(data = screening_data) {
   if (nrow(data) == 0) {
@@ -3185,7 +3578,7 @@ out_plot_tpt_risk_cascade <- function(data = screening_data) {
       name = "Number of individuals",
       expand = expansion(mult = c(0.02, 0.10))
     ) +
-    scale_fill_viridis_d() +
+    scale_fill_viridis_d(option = "F", begin = 0.2, end = 0.8) +
     labs(
       title = "TPT Risk Assessment Cascade (All patients)",
       x = NULL
@@ -3197,9 +3590,11 @@ out_plot_tpt_risk_cascade <- function(data = screening_data) {
       legend.position = "none"
     )
 }
+# out_plot_tpt_risk_cascade(data = screening_data)
 
 
-#' Plot pie chart of reasons for TPT ineligibility
+#' Pie chart of reasons recorded for TPT ineligibility.
+#'
 #' @param data Dataframe. Defaults to screening_data from the environment
 out_plot_tpt_ineligibility_reasons <- function(data = screening_data) {
   # Data manipulation: Using the pre-calculated column for efficiency
@@ -3224,7 +3619,7 @@ out_plot_tpt_ineligibility_reasons <- function(data = screening_data) {
       title = "Reasons for TPT Ineligibility (All patients)",
       fill = "Reason"
     ) +
-    scale_fill_viridis_d() +
+    scale_fill_viridis_d(option = "F", begin = 0.2, end = 0.8) +
     geom_text(
       aes(label = n),
       position = position_stack(vjust = 0.5),
@@ -3233,9 +3628,11 @@ out_plot_tpt_ineligibility_reasons <- function(data = screening_data) {
       colour = "grey10"
     )
 }
+# out_plot_tpt_ineligibility_reasons(data = screening_data)
 
 
-#' Plot pie chart of reasons for incomplete TPT assessment
+#' Pie chart of reasons recorded for not completing TPT assessment.
+#'
 #' @param data Dataframe. Defaults to screening_data from the environment
 out_plot_tpt_assessment_gaps <- function(data = screening_data) {
   # Data manipulation: Leverage the pre-calculated column from Script 03
@@ -3260,7 +3657,7 @@ out_plot_tpt_assessment_gaps <- function(data = screening_data) {
       title = "Reasons for Not Completing TPT Assessment (All patients)",
       fill = "Reason"
     ) +
-    scale_fill_viridis_d() +
+    scale_fill_viridis_d(option = "F", begin = 0.2, end = 0.8) +
     geom_text(
       aes(label = n),
       position = position_stack(vjust = 0.5),
@@ -3269,9 +3666,15 @@ out_plot_tpt_assessment_gaps <- function(data = screening_data) {
       colour = "grey10"
     )
 }
+# out_plot_tpt_assessment_gaps(data = screening_data)
 
 
-#' Generate a flextable of TPT initiation status by clinical risk category (Landscape Optimized)
+#' Table of TPT initiation status by clinical risk category (High/Moderate
+#' high/Moderate/Low/Not yet known/Missing), among TST-positive patients
+#' with TB ruled out: ALT result available/not available, TPT
+#' eligible/not eligible, started/not started, plus an All n/% column and
+#' a Total row.
+#'
 #' @param data Dataframe. Defaults to screening_data from the environment
 out_tab_tpt_initiation_by_risk <- function(data = screening_data) {
   if (nrow(data) == 0) {
@@ -3397,9 +3800,11 @@ out_tab_tpt_initiation_by_risk <- function(data = screening_data) {
 
   return(ft)
 }
+# out_tab_tpt_initiation_by_risk(data = screening_data)
 
 
-#' Plot age-sex pyramid for the TPT treatment cohort
+#' Age-sex population pyramid of the TPT treatment cohort.
+#'
 #' @param data Dataframe. Defaults to treatment_data from the environment
 out_plot_tpt_age_pyramid <- function(data = treatment_data) {
   # 1. Data Preparation
@@ -3421,7 +3826,7 @@ out_plot_tpt_age_pyramid <- function(data = treatment_data) {
     age_group = "age_cat",
     split_by = "tpt_sex"
   ) +
-    scale_fill_viridis_d(option = "F", begin = 0.4, end = 0.7) +
+    scale_fill_viridis_d(option = "F", begin = 0.2, end = 0.8) +
     labs(
       title = "Age–sex distribution of people on TPT",
       subtitle = "Treatment dataset only",
@@ -3434,9 +3839,12 @@ out_plot_tpt_age_pyramid <- function(data = treatment_data) {
       legend.position = "bottom"
     )
 }
+# out_plot_tpt_age_pyramid(data = treatment_data)
 
 
-#' Generate a flextable of TPT patients by age and sex
+#' Table of TPT patient counts by age group and sex, with Male/Female/Total
+#' columns and a Total row.
+#'
 #' @param data Dataframe. Defaults to treatment_data from the environment
 out_tab_tpt_demographics_count <- function(data = treatment_data) {
   if (nrow(data) == 0) {
@@ -3489,9 +3897,13 @@ out_tab_tpt_demographics_count <- function(data = treatment_data) {
 
   return(ft)
 }
+# out_tab_tpt_demographics_count(data = treatment_data)
 
 
-#' Plot monthly proportions of TPT outcomes
+#' Column chart of monthly TPT outcome proportions among all treatment
+#' records: Not yet assigned, Lost to Follow-up, Withdrew Consent,
+#' Discontinued (Medical Reason), Died, Completed TPT.
+#'
 #' @param data Dataframe. Defaults to treatment_data from the environment
 out_plot_tpt_outcome_proportions <- function(data = treatment_data) {
   if (nrow(data) == 0) {
@@ -3544,9 +3956,14 @@ out_plot_tpt_outcome_proportions <- function(data = treatment_data) {
       axis.text.x = element_text(angle = 45, hjust = 1)
     )
 }
+# out_plot_tpt_outcome_proportions(data = treatment_data)
 
 
-#' Generate a flextable of monthly TPT outcomes (Count and Row-wise %)
+#' Table of TPT outcome counts (and row-wise %) by month, restricted to
+#' cohorts started more than weeks_lag weeks ago so they've had time to
+#' reach an outcome. Outcomes: Completed TPT, Died, Discontinued (Medical
+#' Reason), Lost to Follow-up, Withdrew Consent, Not yet assigned.
+#'
 #' @param data Dataframe. Defaults to treatment_data from the environment
 #' @param weeks_lag Integer. Number of weeks to look back for the cohort (default 16)
 out_tab_tpt_outcomes_monthly <- function(
@@ -3642,9 +4059,12 @@ out_tab_tpt_outcomes_monthly <- function(
 
   return(ft)
 }
+# out_tab_tpt_outcomes_monthly(data = treatment_data, weeks_lag = 16)
 
 
-#' Plot TST-Positive treatment retention (Step Function)
+#' Step plot of treatment retention (% of cohort still on TPT) over days
+#' since TPT start, pooled across all treatment starts.
+#'
 #' @param data Dataframe. Defaults to treatment_data from the environment
 #' @param max_day Integer. Number of days to plot (default 168 / 24 weeks)
 out_plot_tpt_retention_step <- function(data = treatment_data, max_day = 168) {
@@ -3697,9 +4117,14 @@ out_plot_tpt_retention_step <- function(data = treatment_data, max_day = 168) {
       panel.grid.minor = element_line(color = "grey95")
     )
 }
+# out_plot_tpt_retention_step(data = treatment_data, max_day = 168)
 
 
-#' Generate a summary flextable of TPT routine monitoring (1, 3, 4 months)
+#' Table of TPT routine monitoring (1/3/4-month review) counts, split into
+#' Form status (Expected, Done), Side effects (Any/Resolved/Not resolved/
+#' Unknown/None), and Outcome of review (Complete/Continue/Suspend TPT),
+#' one column per timepoint.
+#'
 #' @param data Dataframe. Defaults to treatment_data from the environment
 out_tab_tpt_monitoring_summary <- function(data = treatment_data) {
   if (nrow(data) == 0) {
@@ -3818,9 +4243,13 @@ out_tab_tpt_monitoring_summary <- function(data = treatment_data) {
 
   return(ft)
 }
+# out_tab_tpt_monitoring_summary(data = treatment_data)
 
 
-#' Plot monthly treatment follow-up and completion rates by start cohort
+#' Line plot of monthly treatment follow-up/completion rates over time.
+#' Indicators: 1/3/4-Month Review Done / Expected, Outcome Assigned /
+#' Started, Completed / Started.
+#'
 #' @param data Dataframe. Defaults to monthly_long from the environment
 out_plot_tpt_followup_monthly <- function(data = monthly_long) {
   # 1. Internal configuration: Programmatic Events
@@ -3901,9 +4330,13 @@ out_plot_tpt_followup_monthly <- function(data = monthly_long) {
       vjust = 0
     )
 }
+# out_plot_tpt_followup_monthly(data = monthly_long)
 
 
-#' Plot prevalence of any symptoms during TPT by age group and sex
+#' Bar chart of prevalence of any symptom reported during TPT monitoring, by
+#' age group and sex. Denominator: individuals started on TPT with at least
+#' one follow-up record.
+#'
 #' @param data Dataframe. Defaults to treatment_data from the environment
 out_plot_tpt_symptoms_demographics <- function(data = treatment_data) {
   # 1. Data Preparation: Aggregate symptoms across all monitoring timepoints
@@ -3962,9 +4395,12 @@ out_plot_tpt_symptoms_demographics <- function(data = treatment_data) {
       axis.text.x = element_text(angle = 45, hjust = 1)
     )
 }
+# out_plot_tpt_symptoms_demographics(data = treatment_data)
 
 
-#' Generate a flextable of patients reporting symptoms during TPT by age and sex
+#' Table of counts of patients ever reporting a symptom during TPT, by age
+#' group and sex, with Male/Female/Total columns and a Total row.
+#'
 #' @param data Dataframe. Defaults to treatment_data from the environment
 out_tab_tpt_symptoms_count <- function(data = treatment_data) {
   if (nrow(data) == 0) {
@@ -4022,9 +4458,14 @@ out_tab_tpt_symptoms_count <- function(data = treatment_data) {
 
   return(ft)
 }
+# out_tab_tpt_symptoms_count(data = treatment_data)
 
 
-#' Generate a detailed flextable of TPT symptoms by category and timepoint
+#' Table of TPT-related symptom counts by category (DILI, RHS, Common side
+#' effects) and monitoring timepoint (1/3/4-month, AE form) - individual
+#' symptom rows are discovered dynamically from the treatment_data column
+#' names, plus an "Ever" column and a Total row.
+#'
 #' @param data Dataframe. Defaults to treatment_data from the environment
 out_tab_tpt_symptoms_detail <- function(data = treatment_data) {
   if (nrow(data) == 0) {
@@ -4184,9 +4625,14 @@ out_tab_tpt_symptoms_detail <- function(data = treatment_data) {
 
   return(ft)
 }
+# out_tab_tpt_symptoms_detail(data = treatment_data)
 
 
-#' Generate a flextable comparing TPT outcomes by symptom reporting status
+#' Table comparing TPT outcomes (n and %) between patients who reported side
+#' effects vs. those who didn't, plus an all-patients column, restricted to
+#' cohorts started more than weeks_lag weeks ago so they've had time to
+#' reach an outcome.
+#'
 #' @param data Dataframe. Defaults to treatment_data from the environment
 #' @param weeks_lag Integer. Number of weeks for cohort cutoff (default 16)
 out_tab_tpt_outcomes_by_symptoms <- function(
@@ -4308,9 +4754,13 @@ out_tab_tpt_outcomes_by_symptoms <- function(
 
   return(ft)
 }
+# out_tab_tpt_outcomes_by_symptoms(data = treatment_data, weeks_lag = 16)
 
 
-#' Generate a flextable summarizing types of Adverse Events recorded
+#' Table summarizing types of adverse events recorded - side effects,
+#' illness, medicines, pregnancy - each as n and % of patients with any
+#' reported AE.
+#'
 #' @param data Dataframe. Defaults to treatment_data from the environment
 out_tab_ae_type_summary <- function(data = treatment_data) {
   if (nrow(data) == 0) {
@@ -4373,9 +4823,14 @@ out_tab_ae_type_summary <- function(data = treatment_data) {
 
   return(ft)
 }
+# out_tab_ae_type_summary(data = treatment_data)
 
 
-#' Generate a flextable summarizing the AE profile of patients who discontinued TPT
+#' Table of the adverse-event profile among patients who discontinued TPT:
+#' side effects, illness, medicines, pregnancy, common side effects, DILI
+#' symptoms, rifamycin hypersensitivity - each as n and % of the
+#' discontinued cohort, plus Any/None reported and a Total row.
+#'
 #' @param data Dataframe. Defaults to treatment_data from the environment
 out_tab_tpt_discontinued_ae_profile <- function(data = treatment_data) {
   df_disc <- data %>% filter(tpt_outcome_reason == "Discontinued")
@@ -4449,6 +4904,7 @@ out_tab_tpt_discontinued_ae_profile <- function(data = treatment_data) {
 
   return(ft)
 }
+# out_tab_tpt_discontinued_ae_profile(data = treatment_data)
 
 
 # --- MODELLING & SENSITIVITY INPUTS -------------------------------------------

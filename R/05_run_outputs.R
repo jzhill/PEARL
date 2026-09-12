@@ -348,16 +348,16 @@ message("Generating TB Screening Outcomes outputs...")
 
 ## Plots -------------------------------------
 export_plot(
-  out_plot_tb_outcome_proportions_6m(),
+  out_plot_tb_outcome_proportions_time(),
   "04_TB_Screening_Outcomes",
-  "plot_tb_outcome_proportions_6m",
-  "out_plot_tb_outcome_proportions_6m"
+  "plot_tb_outcome_proportions_time",
+  "out_plot_tb_outcome_proportions_time"
 )
 export_plot(
-  out_plot_tst_proportions_6m(),
+  out_plot_tst_proportions_time(),
   "04_TB_Screening_Outcomes",
-  "plot_tst_proportions_6m",
-  "out_plot_tst_proportions_6m"
+  "plot_tst_proportions_time",
+  "out_plot_tst_proportions_time"
 )
 export_plot(
   out_plot_tb_yield_demographics(),
