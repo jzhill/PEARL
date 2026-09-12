@@ -4751,9 +4751,14 @@ out_tab_ae_type_summary <- function(data = treatment_data) {
 
   return(ft)
 }
+# out_tab_ae_type_summary()
 
 
-#' Generate a flextable summarizing the AE profile of patients who discontinued TPT
+#' Table of the adverse-event profile among patients who discontinued TPT:
+#' side effects, illness, medicines, pregnancy, common side effects, DILI
+#' symptoms, rifamycin hypersensitivity - each as n and % of the
+#' discontinued cohort, plus Any/None reported and a Total row.
+#'
 #' @param data Dataframe. Defaults to treatment_data from the environment
 out_tab_tpt_discontinued_ae_profile <- function(data = treatment_data) {
   df_disc <- data %>% filter(tpt_outcome_reason == "Discontinued")
@@ -4827,6 +4832,7 @@ out_tab_tpt_discontinued_ae_profile <- function(data = treatment_data) {
 
   return(ft)
 }
+# out_tab_tpt_discontinued_ae_profile()
 
 
 # --- MODELLING & SENSITIVITY INPUTS -------------------------------------------
