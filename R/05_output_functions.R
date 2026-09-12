@@ -1989,9 +1989,12 @@ out_tab_sputum_cascade <- function(data = screening_data) {
 
   return(ft)
 }
+# out_tab_sputum_cascade()
 
 
-#' Generate a flextable of quarterly TB referral outcomes
+#' Table of quarterly TB referral outcomes (NTP diagnosis categories) for
+#' people with a Presumptive TB decision, with a Total column and row.
+#'
 #' @param data Dataframe. Defaults to screening_data from the environment
 out_tab_tb_referral_outcomes <- function(data = screening_data) {
   if (nrow(data) == 0) {
@@ -2066,9 +2069,13 @@ out_tab_tb_referral_outcomes <- function(data = screening_data) {
 
   return(ft)
 }
+# out_tab_tb_referral_outcomes()
 
 
-#' Generate a flextable of TB screening yield and NNS by age group
+#' Table of TB screening yield and number-needed-to-screen (NNS) by age
+#' group, comparing three screening algorithms: symptom-only, X-ray (10+),
+#' and PEARL-cumulative.
+#'
 #' @param data Dataframe. Defaults to screening_data from the environment
 out_tab_tb_yield_efficiency <- function(data = screening_data) {
   if (nrow(data) == 0) {
@@ -2167,9 +2174,12 @@ out_tab_tb_yield_efficiency <- function(data = screening_data) {
 
   return(ft)
 }
+# out_tab_tb_yield_efficiency()
 
 
-#' Generate a detailed flextable of TB yield (Presumptive & Confirmed) by age and sex (Landscape Optimized)
+#' Table of TB presumptive and confirmed case counts and percentages by age
+#' group, split into male/female columns with a valid-outcome-N column each.
+#'
 #' @param data Dataframe. Defaults to screening_data from the environment
 out_tab_tb_yield_demographics_table <- function(data = screening_data) {
   if (nrow(data) == 0) {
@@ -2265,13 +2275,16 @@ out_tab_tb_yield_demographics_table <- function(data = screening_data) {
 
   return(ft)
 }
+# out_tab_tb_yield_demographics_table()
 
 
 # --- LEPROSY AND PREVENTION SCREENING OUTCOMES -------------------------------
 
 ## Plots -------------------------------------
 
-#' Plot Leprosy screening outcomes (presumptive and confirmed) by age and sex
+#' Bar chart of leprosy screening/confirmation prevalence by age group and
+#' sex, faceted into "Screened Positive" and "Confirmed Leprosy" panels.
+#'
 #' @param data Dataframe. Defaults to screening_data from the environment
 out_plot_lep_yield_demographics <- function(data = screening_data) {
   # 1. Data Preparation: Use vectorized mean for prevalence
