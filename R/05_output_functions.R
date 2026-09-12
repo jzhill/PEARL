@@ -123,15 +123,15 @@ library(qs2)
 #    date IN THE DATA rather than Sys.Date(), to avoid a blank current period when data
 #    collection lags) that needs to be confirmed/recovered per function, not assumed.
 #
-# 4. VIRIDIS COLOR-SCALE INCONSISTENCY:
-#    Most charts use scale_fill/color_viridis_d(option = "F", begin = 0.2, end = 0.8).
-#    Deviations that may or may not be intentional:
-#      - out_plot_age_pyramid:             begin = 0.4, end = 0.6
-#      - out_plot_tpt_age_pyramid:         begin = 0.4, end = 0.7
-#      - out_plot_betio_household_points:  option = "D" (different palette), no begin/end
-#      - out_plot_tpt_outcome_proportions: direction = -1, no begin/end
-#      - out_plot_tpt_assessment_gaps, out_plot_tpt_cascade, out_plot_tpt_ineligibility_reasons,
-#        out_plot_tpt_risk_cascade: bare scale_fill_viridis_d() (full 0-1 range, default option)
+# 4. VIRIDIS COLOR-SCALE INCONSISTENCY: Resolved.
+#    All charts now use scale_fill/color_viridis_d(option = "F", begin = 0.2,
+#    end = 0.8), confirmed with Jeremy per-deviation rather than blanket-applied:
+#    out_plot_age_pyramid and out_plot_tpt_age_pyramid (were narrower/mismatched
+#    begin-end ranges), out_plot_betio_household_points (was option = "D"), and
+#    out_plot_tpt_assessment_gaps/out_plot_tpt_cascade/
+#    out_plot_tpt_ineligibility_reasons/out_plot_tpt_risk_cascade (were bare
+#    scale_fill_viridis_d()) were all standardized. out_plot_tpt_outcome_proportions's
+#    direction = -1 was kept - confirmed intentional.
 #
 # (Item 5, minor dead code in out_plot_village_cumulative_eligible_coverage, resolved
 #  2026-09-11: confirmed first_screen_date is already joined upstream in village_data_cum
@@ -1063,7 +1063,7 @@ out_plot_age_pyramid <- function(data = screening_data) {
 
   # Construct output
   age_pyramid(plot_data, age_group = "age_cat", split_by = "en_sex") +
-    scale_fill_viridis_d(option = "F", begin = 0.4, end = 0.6) +
+    scale_fill_viridis_d(option = "F", begin = 0.2, end = 0.8) +
     labs(
       title = "PEARL participant population pyramid",
       x = "Count",
@@ -1372,7 +1372,7 @@ out_plot_betio_household_points <- function(
     geom_sf(data = ea_layer, fill = "white", color = "black") +
     # Overlay household points colored by status
     geom_sf(data = hh_layer, aes(color = hh_status), size = 1, alpha = 0.8) +
-    scale_color_viridis_d(option = "D", name = "Household Status") +
+    scale_color_viridis_d(option = "F", begin = 0.2, end = 0.8, name = "Household Status") +
     labs(
       title = "Household Locations and Status: Betio",
       subtitle = "Points represent individual dwellings over EA boundaries"
@@ -3428,7 +3428,7 @@ out_plot_tpt_cascade <- function(
       expand = expansion(mult = c(0.02, 0.10)),
       labels = comma
     ) +
-    scale_fill_viridis_d() +
+    scale_fill_viridis_d(option = "F", begin = 0.2, end = 0.8) +
     labs(title = "TST-Positive Treatment Cascade (All patients)", x = NULL) +
     theme_light() +
     theme(
@@ -3508,7 +3508,7 @@ out_plot_tpt_risk_cascade <- function(data = screening_data) {
       name = "Number of individuals",
       expand = expansion(mult = c(0.02, 0.10))
     ) +
-    scale_fill_viridis_d() +
+    scale_fill_viridis_d(option = "F", begin = 0.2, end = 0.8) +
     labs(
       title = "TPT Risk Assessment Cascade (All patients)",
       x = NULL
@@ -3549,7 +3549,7 @@ out_plot_tpt_ineligibility_reasons <- function(data = screening_data) {
       title = "Reasons for TPT Ineligibility (All patients)",
       fill = "Reason"
     ) +
-    scale_fill_viridis_d() +
+    scale_fill_viridis_d(option = "F", begin = 0.2, end = 0.8) +
     geom_text(
       aes(label = n),
       position = position_stack(vjust = 0.5),
@@ -3587,7 +3587,7 @@ out_plot_tpt_assessment_gaps <- function(data = screening_data) {
       title = "Reasons for Not Completing TPT Assessment (All patients)",
       fill = "Reason"
     ) +
-    scale_fill_viridis_d() +
+    scale_fill_viridis_d(option = "F", begin = 0.2, end = 0.8) +
     geom_text(
       aes(label = n),
       position = position_stack(vjust = 0.5),
@@ -3756,7 +3756,7 @@ out_plot_tpt_age_pyramid <- function(data = treatment_data) {
     age_group = "age_cat",
     split_by = "tpt_sex"
   ) +
-    scale_fill_viridis_d(option = "F", begin = 0.4, end = 0.7) +
+    scale_fill_viridis_d(option = "F", begin = 0.2, end = 0.8) +
     labs(
       title = "Age–sex distribution of people on TPT",
       subtitle = "Treatment dataset only",
