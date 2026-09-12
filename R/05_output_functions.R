@@ -94,10 +94,10 @@ library(openxlsx)
 #                                          raw dates directly, interval = c("year","quarter","month")
 #                                          controls bucketing/labels. Not yet retrofitted elsewhere.)
 #      - start_date/end_date + periods_back/interval (week/month only - see
-#        build_time_agg() in 03_tidy_data.R): out_plot_weekly_quality (2026-09:
-#        standardized; anchor deliberately stays at max(data$period_start), not
-#        Sys.Date(), confirmed with Jeremy - see the function's own roxygen doc)
-#      - start_date/end_date (no interval): out_tab_project_weekly_review
+#        build_time_agg() in 03_tidy_data.R): out_plot_weekly_quality,
+#        out_tab_project_weekly_review (2026-09: standardized; anchor
+#        deliberately stays at max(data$period_start), not Sys.Date(),
+#        confirmed with Jeremy - see each function's own roxygen doc)
 #      - start_year/end_year:             out_tab_lep_village
 #      - weeks_lag (cohort-maturity cutoff, NOT a display window - excludes anyone who
 #        hasn't had time to reach an outcome yet): out_tab_tpt_outcomes_monthly,
@@ -450,17 +450,47 @@ out_tab_team_weekly_review <- function(
 }
 
 
-#' Generate a weekly project performance trend table
+#' Generate a project performance trend table
+#'
+#' Table of indicator values by week or month, one row per indicator, one
+#' column per period, spanning periods_back periods up to the latest
+#' week/month in the data. core_only = TRUE (default) shows the same core
+#' indicators as out_plot_weekly_quality; core_only = FALSE shows the full
+#' indicator dictionary, grouped by section.
+#'
+#' @param data Dataframe. Defaults to weekly_data (interval = "week") or
+#'   monthly_data (interval = "month").
+#' @param end_date Date. Optional; defaults to max date in data - deliberately
+#'   anchored to the latest date actually present in the data rather than
+#'   Sys.Date(), so a report run before this period's data has landed still
+#'   shows a complete final period instead of a blank one.
+#' @param start_date Date. Optional; defaults to periods_back periods prior to end_date.
+#' @param periods_back Numeric. How many periods (see interval) to show before
+#'   end_date when start_date isn't given (default 12). 2026-09: added to
+#'   replace a hardcoded weeks(12); anchor behavior above is unchanged.
+#' @param interval Character. "week" or "month" - which pre-aggregated dataset
+#'   and period length periods_back counts in (default "week"). 2026-09:
+#'   quarter/year aren't available yet - build_time_agg() in 03_tidy_data.R
+#'   only produces week/month aggregates.
+#' @param core_only Logical. Show only core indicators (default TRUE).
 #' @param font_size Numeric. Base font size.
 #' @param table_width Numeric. Total table width in inches.
 out_tab_project_weekly_review <- function(
-  data = weekly_data,
+  data = NULL,
   end_date = NULL,
   start_date = NULL,
+  periods_back = 12,
+  interval = c("week", "month"),
   core_only = TRUE,
   font_size = 8,
   table_width = NULL
 ) {
+  interval <- match.arg(interval)
+
+  if (is.null(data)) {
+    data <- if (interval == "week") weekly_data else monthly_data
+  }
+
   if (nrow(data) == 0) {
     return(no_data_flextable())
   }
@@ -469,8 +499,17 @@ out_tab_project_weekly_review <- function(
     end_date <- max(data$period_start, na.rm = TRUE)
   }
   if (is.null(start_date)) {
-    start_date <- end_date - weeks(12)
+    start_date <- if (interval == "week") {
+      end_date - weeks(periods_back)
+    } else {
+      end_date %m-% months(periods_back)
+    }
   }
+
+  # Column-header / title date format: day-and-month for weeks, but just
+  # month-and-year for months (a monthly period_start is always the 1st,
+  # so a day component would just show a redundant "01" on every header).
+  period_label_fmt <- if (interval == "week") "%d %b" else "%b %Y"
 
   dict <- get_all_indicators_dict()
   if (core_only) {
@@ -485,10 +524,10 @@ out_tab_project_weekly_review <- function(
   matrix_data <- data %>%
     filter(period_start >= start_date & period_start <= end_date) %>%
     arrange(period_start) %>%
-    mutate(week_label = format(period_start, "%d %b")) %>%
-    select(week_label, any_of(ind_keys)) %>%
+    mutate(period_label = format(period_start, period_label_fmt)) %>%
+    select(period_label, any_of(ind_keys)) %>%
     pivot_longer(
-      cols = -week_label,
+      cols = -period_label,
       names_to = "Indicator_Key",
       values_to = "Value"
     ) %>%
@@ -499,9 +538,9 @@ out_tab_project_weekly_review <- function(
         TRUE ~ formatC(Value, format = "f", digits = 0, big.mark = ",")
       )
     ) %>%
-    select(week_label, Indicator_Key, Val) %>%
+    select(period_label, Indicator_Key, Val) %>%
     pivot_wider(
-      names_from = week_label,
+      names_from = period_label,
       values_from = Val,
       values_fill = "-"
     )
@@ -510,12 +549,12 @@ out_tab_project_weekly_review <- function(
     left_join(matrix_data, by = "Indicator_Key") %>%
     select(-Indicator_Key, -is_core)
 
-  week_cols <- setdiff(names(final_df), c("Group", "Indicator_Name"))
+  period_cols <- setdiff(names(final_df), c("Group", "Indicator_Name"))
   title_text <- paste0(
     "Project Trend: ",
-    format(start_date, "%d %b"),
+    format(start_date, period_label_fmt),
     " to ",
-    format(end_date, "%d %b %Y")
+    format(end_date, if (interval == "week") "%d %b %Y" else "%b %Y")
   )
 
   ft <- final_df %>%
@@ -528,10 +567,10 @@ out_tab_project_weekly_review <- function(
     fontsize(size = font_size, part = "all")
 
   if (!is.null(table_width)) {
-    col_count <- length(week_cols)
+    col_count <- length(period_cols)
     ft <- ft %>%
       width(j = 1, width = table_width * 0.3) %>%
-      width(j = week_cols, width = (table_width * 0.7) / col_count)
+      width(j = period_cols, width = (table_width * 0.7) / col_count)
   }
 
   return(ft)
