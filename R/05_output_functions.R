@@ -2353,9 +2353,11 @@ out_plot_lep_yield_demographics <- function(data = screening_data) {
       axis.text.x = element_text(angle = 45, hjust = 1)
     )
 }
+# out_plot_lep_yield_demographics()
 
 
-#' Plot treatment proportions from screening activity over a chosen time interval
+#' Column chart of treatment-type proportions (No treatment, MDT, TBRx, TPT,
+#' SDR) among all registered participants, bucketed by month/quarter/year.
 #'
 #' @param data Dataframe. Defaults to screening_data from the environment.
 #' @param start_date Date. Optional; filters data from this date (inclusive). Defaults to the earliest en_date_visit.
@@ -2447,11 +2449,14 @@ out_plot_treatment_proportions_time <- function(
       axis.text.x = element_text(angle = 45, hjust = 1)
     )
 }
+# out_plot_treatment_proportions_time()
 
 
 ## Tables -------------------------------------
 
-#' Generate a detailed flextable of Leprosy yield (Presumptive & Confirmed) by age and sex (Landscape Optimized)
+#' Table of leprosy presumptive and confirmed case counts and percentages by
+#' age group, split into male/female columns with a valid-N column each.
+#'
 #' @param data Dataframe. Defaults to screening_data from the environment
 out_tab_lep_yield_demographics_table <- function(data = screening_data) {
   lep_summary_wide <- data %>%
@@ -2546,9 +2551,12 @@ out_tab_lep_yield_demographics_table <- function(data = screening_data) {
 
   return(ft)
 }
+# out_tab_lep_yield_demographics_table()
 
 
-#' Generate a flextable of quarterly Leprosy referral outcomes
+#' Table of quarterly leprosy referral outcomes (NLP diagnosis categories)
+#' for people referred for leprosy, with a Total column and row.
+#'
 #' @param data Dataframe. Defaults to screening_data from the environment
 out_tab_lep_referral_outcomes <- function(data = screening_data) {
   if (nrow(data) == 0) {
@@ -2623,6 +2631,7 @@ out_tab_lep_referral_outcomes <- function(data = screening_data) {
 
   return(ft)
 }
+# out_tab_lep_referral_outcomes()
 
 
 #' Shared household-level leprosy indicator summary. Caller must group_by()
@@ -2863,6 +2872,7 @@ out_tab_lep_ind_time <- function(
 
   return(ft)
 }
+# out_tab_lep_ind_time()
 
 
 #' Table of household enumeration and leprosy screening/treatment indicators
@@ -3023,9 +3033,12 @@ out_tab_lep_village <- function(
 
   return(ft)
 }
+# out_tab_lep_village()
 
 
-#' Generate a flextable of treatment proportions (Counts and Row-wise %) over a chosen time interval
+#' Table of treatment-type counts and row-wise percentages (No treatment,
+#' MDT, TBRx, TPT, SDR, Any treatment) among all registered participants,
+#' bucketed by month/quarter/year, with a Total row.
 #'
 #' @param data Dataframe. Defaults to screening_data from the environment.
 #' @param start_date Date. Optional; filters data from this date (inclusive). Defaults to the earliest en_date_visit.
@@ -3162,6 +3175,7 @@ out_tab_treatment_proportions_time <- function(
 
   return(ft)
 }
+# out_tab_treatment_proportions_time()
 
 
 #' Write the leprosy grant report data package (xlsx) with one sheet per underlying table
