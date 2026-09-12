@@ -153,24 +153,31 @@ library(qs2)
 #    conditional logic needed.
 #
 #    Tables (flextable): current style bakes the title into the header via
-#    add_header_lines(values = "...") (a row spanning all columns, above any
-#    existing multi-row headers like the Male/Female groupings some tables
-#    have). Two candidate approaches, in order of preference - pick after
-#    checking flextable's actual behavior (installed version per renv.lock:
-#    0.10.0; couldn't load the package in this session to verify directly):
-#      a. flextable::set_caption() - attaches a genuine caption element
-#         distinct from the header/body cell grid, which may natively support
-#         being omitted. Check whether its rendered look (position, styling)
-#         matches the existing "Table: XYZ" header-row convention closely
-#         enough to switch to it, or whether it's visually a different thing
-#         (e.g. positioned/styled differently in Word/HTML output).
-#      b. If (a) doesn't fit: keep add_header_lines(), just wrap it
-#         conditionally - if (!is.null(title)) { ft <- ft %>%
-#         add_header_lines(values = title) } - skipping the extra header row
-#         entirely when suppressed. This is a known-safe fallback (the file
-#         already uses this exact "conditionally apply a flextable modifier"
-#         pattern for table_width, e.g. in out_tab_project_weekly_review), so
-#         don't get stuck on (a) if it doesn't pan out.
+#    add_header_lines(values = "...") (a row spanning all columns, INSIDE the
+#    table's own border, above any existing multi-row headers like the Male/
+#    Female groupings some tables have). Checked flextable's actual docs
+#    (CRAN + the flextable book, since the package wasn't loadable in this
+#    session to test directly) for the alternative, set_caption():
+#      - set_caption() attaches a SEPARATE PARAGRAPH element, positioned
+#        above (default) or below the table via tab.topcaption - it is NOT
+#        part of the table's cell grid, unlike add_header_lines(). In Word it
+#        renders in the built-in "Table Caption" paragraph style (with
+#        auto-numbering/cross-reference support); a flextable is caption-less
+#        by default, so title = NULL naturally means "don't call it".
+#      - This means set_caption() is NOT a drop-in visual match for the
+#        current convention - switching to it would change how every table's
+#        title actually looks (a styled paragraph outside the table border,
+#        not a bold row spanning all columns inside it), which conflicts with
+#        this file's own "ZERO DRIFT: never change default styling" rule.
+#      - Recommendation: default to the zero-drift option - keep
+#        add_header_lines(), wrap it conditionally: if (!is.null(title)) {
+#        ft <- ft %>% add_header_lines(values = title) }, skipping the row
+#        entirely when suppressed. The file already uses this exact
+#        "conditionally apply a flextable modifier" pattern for table_width
+#        (e.g. in out_tab_project_weekly_review). Only consider set_caption()
+#        if a genuine future redesign of the table look (e.g. Word
+#        cross-references) is wanted - that would be a deliberate, separate
+#        decision, not a side effect of adding this parameter.
 #
 #    Also worth checking before implementing:
 #      - Audit whether every function currently has SOME title already (a few
