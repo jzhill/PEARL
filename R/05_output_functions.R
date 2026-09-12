@@ -1491,6 +1491,7 @@ out_plot_tb_outcome_proportions_time <- function(
     theme_light() +
     theme(axis.text.x = element_text(angle = 45, hjust = 1))
 }
+# out_plot_tb_outcome_proportions_time()
 
 
 #' Column chart of TST screening results over time, as proportions of the
@@ -1588,9 +1589,13 @@ out_plot_tst_proportions_time <- function(
     theme_light() +
     theme(axis.text.x = element_text(angle = 45, hjust = 1))
 }
+# out_plot_tst_proportions_time()
 
 
-#' Plot TB screening outcomes (presumptive and confirmed) by age and sex
+#' Bar chart of TB screening/confirmation prevalence by age group and sex,
+#' faceted into "Screened Positive" and "Confirmed TB" panels. Denominator:
+#' individuals with a completed TB diagnostic decision.
+#'
 #' @param data Dataframe. Defaults to screening_data from the environment
 out_plot_tb_yield_demographics <- function(data = screening_data) {
   # 1. Data Preparation: Vectorized Prevalence Calculation
@@ -1660,9 +1665,11 @@ out_plot_tb_yield_demographics <- function(data = screening_data) {
       axis.text.x = element_text(angle = 45, hjust = 1)
     )
 }
+# out_plot_tb_yield_demographics()
 
 
-#' Plot TST positivity prevalence by age category
+#' Bar chart of TST positivity prevalence by age category.
+#'
 #' @param data Dataframe. Defaults to screening_data from the environment
 out_plot_tst_positivity_by_age <- function(data = screening_data) {
   # Data manipulation: Calculate prevalence as a decimal (0-1)
@@ -1696,9 +1703,13 @@ out_plot_tst_positivity_by_age <- function(data = screening_data) {
     ) +
     theme_light()
 }
+# out_plot_tst_positivity_by_age()
 
 
-#' Plot TST positivity proportions by age for 5mm and 10mm thresholds
+#' Line plot of TST positivity proportions by age category at the >=5mm and
+#' >=10mm reading thresholds, with dashed lines showing project-wide
+#' averages for each threshold.
+#'
 #' @param data Dataframe. Defaults to screening_data from the environment
 out_plot_tst_thresholds_age <- function(data = screening_data) {
   if (nrow(data) == 0) {
@@ -1776,9 +1787,12 @@ out_plot_tst_thresholds_age <- function(data = screening_data) {
     theme_light() +
     theme(legend.position = "top")
 }
+# out_plot_tst_thresholds_age()
 
 
-#' Plot TST positivity prevalence by age group and sex
+#' Bar chart of TST positivity prevalence by age group and sex. Denominator:
+#' individuals with a successfully read TST.
+#'
 #' @param data Dataframe. Defaults to screening_data from the environment
 out_plot_tst_yield_demographics <- function(data = screening_data) {
   # 1. Data Preparation: Calculate prevalence among those with a valid TST read
@@ -1827,11 +1841,14 @@ out_plot_tst_yield_demographics <- function(data = screening_data) {
       axis.text.x = element_text(angle = 45, hjust = 1)
     )
 }
+# out_plot_tst_yield_demographics()
 
 
 ## Tables -------------------------------------
 
-#' Generate a detailed flextable of TST positivity by age and sex (Landscape Optimized)
+#' Table of TST positivity counts (n) and percentage by age group, split
+#' into male/female columns, each with a valid-N column.
+#'
 #' @param data Dataframe. Defaults to screening_data from the environment
 out_tab_tst_yield_demographics_table <- function(data = screening_data) {
   tst_summary_wide <- data %>%
@@ -1907,9 +1924,13 @@ out_tab_tst_yield_demographics_table <- function(data = screening_data) {
 
   return(ft)
 }
+# out_tab_tst_yield_demographics_table()
 
 
-#' Generate a flextable of the Sputum and GeneXpert diagnostic cascade
+#' Table of the sputum/GeneXpert diagnostic cascade by age group: registered,
+#' sputum collected, sputum tested, Xpert resulted, Xpert positive. Rows for
+#' each age group, plus "Ages 10+" and "All" summary rows.
+#'
 #' @param data Dataframe. Defaults to screening_data from the environment
 out_tab_sputum_cascade <- function(data = screening_data) {
   if (nrow(data) == 0) {
