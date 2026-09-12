@@ -3731,7 +3731,8 @@ out_tab_tpt_initiation_by_risk <- function(data = screening_data) {
 # out_tab_tpt_initiation_by_risk()
 
 
-#' Plot age-sex pyramid for the TPT treatment cohort
+#' Age-sex population pyramid of the TPT treatment cohort.
+#'
 #' @param data Dataframe. Defaults to treatment_data from the environment
 out_plot_tpt_age_pyramid <- function(data = treatment_data) {
   # 1. Data Preparation
@@ -3766,9 +3767,12 @@ out_plot_tpt_age_pyramid <- function(data = treatment_data) {
       legend.position = "bottom"
     )
 }
+# out_plot_tpt_age_pyramid()
 
 
-#' Generate a flextable of TPT patients by age and sex
+#' Table of TPT patient counts by age group and sex, with Male/Female/Total
+#' columns and a Total row.
+#'
 #' @param data Dataframe. Defaults to treatment_data from the environment
 out_tab_tpt_demographics_count <- function(data = treatment_data) {
   if (nrow(data) == 0) {
@@ -3821,9 +3825,13 @@ out_tab_tpt_demographics_count <- function(data = treatment_data) {
 
   return(ft)
 }
+# out_tab_tpt_demographics_count()
 
 
-#' Plot monthly proportions of TPT outcomes
+#' Column chart of monthly TPT outcome proportions among all treatment
+#' records: Not yet assigned, Lost to Follow-up, Withdrew Consent,
+#' Discontinued (Medical Reason), Died, Completed TPT.
+#'
 #' @param data Dataframe. Defaults to treatment_data from the environment
 out_plot_tpt_outcome_proportions <- function(data = treatment_data) {
   if (nrow(data) == 0) {
@@ -3876,9 +3884,14 @@ out_plot_tpt_outcome_proportions <- function(data = treatment_data) {
       axis.text.x = element_text(angle = 45, hjust = 1)
     )
 }
+# out_plot_tpt_outcome_proportions()
 
 
-#' Generate a flextable of monthly TPT outcomes (Count and Row-wise %)
+#' Table of TPT outcome counts (and row-wise %) by month, restricted to
+#' cohorts started more than weeks_lag weeks ago so they've had time to
+#' reach an outcome. Outcomes: Completed TPT, Died, Discontinued (Medical
+#' Reason), Lost to Follow-up, Withdrew Consent, Not yet assigned.
+#'
 #' @param data Dataframe. Defaults to treatment_data from the environment
 #' @param weeks_lag Integer. Number of weeks to look back for the cohort (default 16)
 out_tab_tpt_outcomes_monthly <- function(
@@ -3974,9 +3987,12 @@ out_tab_tpt_outcomes_monthly <- function(
 
   return(ft)
 }
+# out_tab_tpt_outcomes_monthly()
 
 
-#' Plot TST-Positive treatment retention (Step Function)
+#' Step plot of treatment retention (% of cohort still on TPT) over days
+#' since TPT start, pooled across all treatment starts.
+#'
 #' @param data Dataframe. Defaults to treatment_data from the environment
 #' @param max_day Integer. Number of days to plot (default 168 / 24 weeks)
 out_plot_tpt_retention_step <- function(data = treatment_data, max_day = 168) {
@@ -4029,9 +4045,14 @@ out_plot_tpt_retention_step <- function(data = treatment_data, max_day = 168) {
       panel.grid.minor = element_line(color = "grey95")
     )
 }
+# out_plot_tpt_retention_step()
 
 
-#' Generate a summary flextable of TPT routine monitoring (1, 3, 4 months)
+#' Table of TPT routine monitoring (1/3/4-month review) counts, split into
+#' Form status (Expected, Done), Side effects (Any/Resolved/Not resolved/
+#' Unknown/None), and Outcome of review (Complete/Continue/Suspend TPT),
+#' one column per timepoint.
+#'
 #' @param data Dataframe. Defaults to treatment_data from the environment
 out_tab_tpt_monitoring_summary <- function(data = treatment_data) {
   if (nrow(data) == 0) {
@@ -4150,9 +4171,13 @@ out_tab_tpt_monitoring_summary <- function(data = treatment_data) {
 
   return(ft)
 }
+# out_tab_tpt_monitoring_summary()
 
 
-#' Plot monthly treatment follow-up and completion rates by start cohort
+#' Line plot of monthly treatment follow-up/completion rates over time.
+#' Indicators: 1/3/4-Month Review Done / Expected, Outcome Assigned /
+#' Started, Completed / Started.
+#'
 #' @param data Dataframe. Defaults to monthly_long from the environment
 out_plot_tpt_followup_monthly <- function(data = monthly_long) {
   # 1. Internal configuration: Programmatic Events
