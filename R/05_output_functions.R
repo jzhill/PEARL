@@ -811,10 +811,16 @@ out_plot_weekly_quality <- function(
       date_breaks = date_breaks,
       date_labels = date_labels
     ) +
+    # 2026-09: fixed - names previously didn't match get_all_indicators_dict()'s
+    # current Indicator_Name values (a prior rename left these stale), and
+    # "indianred" wasn't greyscale. Upper panel is deliberately greyscale
+    # (secondary/context indicators); the lower panel carries the viridis
+    # house palette for the primary percentage indicators.
     scale_color_manual(
       values = c(
-        "Participants Registered" = "grey70",
-        "Target Missed (Eligible - Registered)" = "indianred"
+        "Registered" = "grey50",
+        "Target Pop (Eligible)" = "grey80",
+        "Number Missing" = "grey20"
       )
     ) +
     theme_light(base_size = base_size) +
