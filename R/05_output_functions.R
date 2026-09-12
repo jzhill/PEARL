@@ -93,7 +93,11 @@ library(openxlsx)
 #                                          convention going forward - start_date/end_date filter the
 #                                          raw dates directly, interval = c("year","quarter","month")
 #                                          controls bucketing/labels. Not yet retrofitted elsewhere.)
-#      - start_date/end_date (no interval): out_plot_weekly_quality, out_tab_project_weekly_review
+#      - start_date/end_date + periods_back/interval (week/month only - see
+#        build_time_agg() in 03_tidy_data.R): out_plot_weekly_quality (2026-09:
+#        standardized; anchor deliberately stays at max(data$period_start), not
+#        Sys.Date(), confirmed with Jeremy - see the function's own roxygen doc)
+#      - start_date/end_date (no interval): out_tab_project_weekly_review
 #      - start_year/end_year:             out_tab_lep_village
 #      - weeks_lag (cohort-maturity cutoff, NOT a display window - excludes anyone who
 #        hasn't had time to reach an outcome yet): out_tab_tpt_outcomes_monthly,
@@ -697,24 +701,53 @@ out_plot_weekly_activity <- function(data = weekly_data) {
 
 
 #' Plot core weekly quality indicators (Matches Core Table)
-#' @param data Dataframe. Defaults to weekly_long
-#' @param end_date Date. Optional; defaults to max date in data.
-#' @param start_date Date. Optional; defaults to 12 weeks prior to end_date.
-#' @param date_breaks Character. Spacing for the x-axis ticks (default "1 week").
+#'
+#' @param data Dataframe. Defaults to weekly_long (interval = "week") or
+#'   monthly_long (interval = "month").
+#' @param end_date Date. Optional; defaults to max date in data - deliberately
+#'   anchored to the latest date actually present in the data rather than
+#'   Sys.Date(), so a report run before this period's data has landed still
+#'   shows a complete final period instead of a blank one.
+#' @param start_date Date. Optional; defaults to periods_back periods prior to end_date.
+#' @param periods_back Numeric. How many periods (see interval) to show before
+#'   end_date when start_date isn't given (default 12). 2026-09: added to
+#'   replace a hardcoded weeks(12); anchor behavior above is unchanged.
+#' @param interval Character. "week" or "month" - which pre-aggregated dataset
+#'   and period length periods_back counts in (default "week"). 2026-09:
+#'   quarter/year aren't available yet - build_time_agg() in 03_tidy_data.R
+#'   only produces week/month aggregates.
+#' @param date_breaks Character. Spacing for the x-axis ticks. Defaults to "1
+#'   week" or "1 month" to match interval, unless overridden.
 #' @param base_size Numeric. Base font size for the plot (default 11).
 out_plot_weekly_quality <- function(
-  data = weekly_long,
+  data = NULL,
   end_date = NULL,
   start_date = NULL,
-  date_breaks = "1 week",
+  periods_back = 12,
+  interval = c("week", "month"),
+  date_breaks = NULL,
   base_size = 11
 ) {
+  interval <- match.arg(interval)
+
+  if (is.null(data)) {
+    data <- if (interval == "week") weekly_long else monthly_long
+  }
+
   # 1. Date Handling
   if (is.null(end_date)) {
     end_date <- max(data$period_start, na.rm = TRUE)
   }
   if (is.null(start_date)) {
-    start_date <- end_date - weeks(12)
+    start_date <- if (interval == "week") {
+      end_date - weeks(periods_back)
+    } else {
+      end_date %m-% months(periods_back)
+    }
+  }
+
+  if (is.null(date_breaks)) {
+    date_breaks <- if (interval == "week") "1 week" else "1 month"
   }
 
   # Smart date labels based on the requested breaks
@@ -825,7 +858,11 @@ out_plot_weekly_quality <- function(
       date_labels = date_labels
     ) +
     scale_color_viridis_d(option = "F", begin = 0.2, end = 0.8) +
-    labs(x = "Time (Weeks)", y = "Percentage (%)", color = "Indicator") +
+    labs(
+      x = if (interval == "week") "Time (Weeks)" else "Time (Months)",
+      y = "Percentage (%)",
+      color = "Indicator"
+    ) +
     theme_light(base_size = base_size) +
     theme(
       axis.text.x = element_text(angle = 45, hjust = 1),
