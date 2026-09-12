@@ -15,6 +15,8 @@ library(cowplot)
 library(scales)
 library(sf)
 library(openxlsx)
+library(here)
+library(qs2)
 
 # --- MAINTENANCE RULES FOR AI AGENTS ---------------------
 # 1. PRAGMATIC PARAMETERS: All output functions should support scaling.
