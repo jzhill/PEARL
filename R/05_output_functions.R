@@ -702,6 +702,14 @@ out_plot_weekly_activity <- function(data = weekly_data) {
 
 #' Plot core weekly quality indicators (Matches Core Table)
 #'
+#' Line plot of core quality indicators for the screening team over time
+#' (week or month increments), with percentage indicators in a lower panel
+#' tracked against numeric activity indicators in an upper panel. Core
+#' indicators: Registered, Target Population (Eligible), Number Missing
+#' (upper panel, counts); X-Ray Performed (%), Sputum Tested (%), TB
+#' Decision (%), TB Decision Complete (%), TST Read (%), TPT Assessed /
+#' Should Assess (%), Any Treatment (%) (lower panel, percentages).
+#'
 #' @param data Dataframe. Defaults to weekly_long (interval = "week") or
 #'   monthly_long (interval = "month").
 #' @param end_date Date. Optional; defaults to max date in data - deliberately
