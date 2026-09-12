@@ -284,7 +284,12 @@ get_pearl_events <- function() {
 
 ## Tables -------------------------------------
 
-#' Generate a flextable activity summary using pre-aggregated weekly indicators
+#' Table of weekly activity counts for a target week, compared against the
+#' previous week and the cumulative project total. Indicators: Households
+#' Enumerated, Households Screened, People Registered, TSTs Completed,
+#' Referred to NTP, Referred to NLP, Referred to Hep B, X-Rays Performed,
+#' X-Rays Resulted, Xpert Tests Done, Started on TPT, Completed TPT.
+#'
 #' @param data Dataframe. Defaults to weekly_data (the tidy summary object)
 #' @param target_week Date. Optional; defaults to the latest week in data
 out_tab_activity_summary <- function(data = weekly_data, target_week = NULL) {
@@ -349,9 +354,14 @@ out_tab_activity_summary <- function(data = weekly_data, target_week = NULL) {
 
   return(ft)
 }
+# out_tab_activity_summary()
 
 
-#' Generate a weekly team performance table
+#' Table comparing each team's weekly performance against the project
+#' overall ("ALL" column), for a target week (current or previous).
+#' core_only = TRUE (default) shows only core indicators; core_only = FALSE
+#' shows the full indicator dictionary, grouped by section.
+#'
 #' @param font_size Numeric. Base font size for the table.
 #' @param table_width Numeric. Total table width in inches. Defaults to NULL (autofit).
 out_tab_team_weekly_review <- function(
@@ -458,6 +468,7 @@ out_tab_team_weekly_review <- function(
 
   return(ft)
 }
+# out_tab_team_weekly_review()
 
 
 #' Generate a project performance trend table
@@ -584,9 +595,12 @@ out_tab_project_weekly_review <- function(
 
   return(ft)
 }
+# out_tab_project_weekly_review()
 
 
-#' Generate a transposed geographic indicator table with optional Total column
+#' Generic transposed table of caller-specified indicators (rows) by EA or
+#' village (columns, via id_col), with an optional Total column - percentages
+#' /proportions are averaged in the Total, counts are summed.
 #'
 #' @param data Master dataframe (ea_data or village_data).
 #' @param indicators Character vector. The exact column names to include as rows.
@@ -691,11 +705,15 @@ out_tab_geo_indicators <- function(
 
   return(ft)
 }
+# out_tab_geo_indicators(data = village_data, indicators = c("reg", "pop_elig_new"), id_col = "village")
 
 
 ## Plots -------------------------------------
 
-#' Plot weekly activity: Households, Registrations, and TPT starts
+#' Line plot of weekly household enumeration, registration, and TPT
+#' initiation counts over time. Indicators: Households Enumerated, People
+#' Registered, People Started on TPT.
+#'
 #' @param data Dataframe. Defaults to weekly_data from the environment
 out_plot_weekly_activity <- function(data = weekly_data) {
   if (nrow(data) == 0) {
@@ -746,6 +764,7 @@ out_plot_weekly_activity <- function(data = weekly_data) {
       legend.position = "bottom"
     )
 }
+# out_plot_weekly_activity()
 
 
 #' Plot core weekly quality indicators (Matches Core Table)
@@ -940,9 +959,14 @@ out_plot_weekly_quality <- function(
     rel_heights = c(0.3, 0.7)
   )
 }
+# out_plot_weekly_quality()
 
 
-#' Plot monthly follow-up and clinical quality indicators with event annotations
+#' Line plot of monthly follow-up/clinical quality indicators over time, with
+#' event annotations. Indicators: NTP Outcome Recorded, NLP Outcome
+#' Recorded, TPT Assessed / Should Assess, TPT Started / Eligible, Eligible
+#' among Started.
+#'
 #' @param data Dataframe. Defaults to monthly_long from the environment
 out_plot_monthly_quality_indicators <- function(data = monthly_long) {
   # 1. Internal configuration: Programmatic Events
@@ -1021,11 +1045,13 @@ out_plot_monthly_quality_indicators <- function(data = monthly_long) {
       vjust = 1
     )
 }
+# out_plot_monthly_quality_indicators()
 
 
 # --- DEMOGRAPHICS ------------------------------------------------------------
 
-#' Plot age pyramid of PEARL participants
+#' Age-sex population pyramid of all PEARL participants.
+#'
 #' @param data Dataframe. Defaults to screening_data from the environment
 out_plot_age_pyramid <- function(data = screening_data) {
   # Data manipulation included inside for encapsulation
@@ -1044,11 +1070,14 @@ out_plot_age_pyramid <- function(data = screening_data) {
     theme_light() +
     theme(legend.title = element_blank())
 }
+# out_plot_age_pyramid()
 
 
 # --- GEOGRAPHIC COVERAGE AND SCREENING ---------------------------------------
 
-#' Plot registration coverage by Enumeration Area (EA)
+#' Bar chart of registration coverage (registered / eligible) by Enumeration
+#' Area, colored by village.
+#'
 #' @param data Dataframe. Defaults to ea_data from the environment
 out_plot_ea_coverage <- function(data = ea_data) {
   # Data manipulation
@@ -1087,9 +1116,12 @@ out_plot_ea_coverage <- function(data = ea_data) {
       axis.text.x = element_text(angle = 90, hjust = 1)
     )
 }
+# out_plot_ea_coverage()
 
 
-#' Plot cumulative registration coverage by village over time
+#' Line plot of cumulative proportion of village population screened over
+#' time, by village. Denominator: 2023 census population, excluding ages 0-2.
+#'
 #' @param data Dataframe. Defaults to village_data_cum from the environment
 out_plot_village_cumulative_coverage <- function(data = village_data_cum) {
   # Data manipulation for clean time-series visualization
@@ -1128,9 +1160,11 @@ out_plot_village_cumulative_coverage <- function(data = village_data_cum) {
       axis.text.x = element_text(angle = 45, hjust = 1)
     )
 }
+# out_plot_village_cumulative_coverage()
 
 
-#' Plot cumulative stacked area of screening progress by village
+#' Line plot of cumulative number of people screened over time, by village.
+#'
 #' @param data Dataframe. Defaults to village_data_cum from the environment
 #' @param max_y Numeric. The upper limit for the Y axis (default 30000)
 out_plot_village_cumulative_screening <- function(
@@ -1164,9 +1198,11 @@ out_plot_village_cumulative_screening <- function(
       legend.position = "right"
     )
 }
+# out_plot_village_cumulative_screening()
 
 
-#' Plot map of screening counts by Enumeration Area (EA) in Betio
+#' Choropleth map of raw screening counts by Enumeration Area in Betio.
+#'
 #' @param data sf object. Defaults to layer_betio_ea_3832 from the environment
 out_plot_betio_screening_map <- function(data = layer_betio_ea_3832) {
   if (nrow(data) == 0) {
@@ -1198,9 +1234,12 @@ out_plot_betio_screening_map <- function(data = layer_betio_ea_3832) {
       axis.ticks = element_blank()
     )
 }
+# out_plot_betio_screening_map()
 
 
-#' Plot map of screening coverage (proportion) by Enumeration Area (EA) in Betio
+#' Choropleth map of screening coverage (proportion registered/eligible) by
+#' Enumeration Area in Betio.
+#'
 #' @param data sf object. Defaults to layer_betio_ea_3832 from the environment
 out_plot_betio_coverage_map <- function(data = layer_betio_ea_3832) {
   if (nrow(data) == 0) {
@@ -1240,9 +1279,14 @@ out_plot_betio_coverage_map <- function(data = layer_betio_ea_3832) {
       axis.ticks = element_blank()
     )
 }
+# out_plot_betio_coverage_map()
 
 
-#' Plot cumulative screening coverage using project-defined eligible population
+#' Line plot of cumulative proportion of village population screened over
+#' time, by village, restricted to villages with >= 100 registrations.
+#' Denominator: project-defined eligible population (not the 2023 census -
+#' see out_plot_village_cumulative_coverage for that version).
+#'
 #' @param data Dataframe. Defaults to village_data_cum from the environment
 #' @param v_data Dataframe. Defaults to village_data from the environment
 out_plot_village_cumulative_eligible_coverage <- function(
@@ -1306,9 +1350,11 @@ out_plot_village_cumulative_eligible_coverage <- function(
       legend.position = "right"
     )
 }
+# out_plot_village_cumulative_eligible_coverage()
 
 
-#' Plot point map of households over EA boundaries in Betio
+#' Point map of household locations and status over EA boundaries in Betio.
+#'
 #' @param ea_layer sf object. Defaults to layer_betio_ea_3832
 #' @param hh_layer sf object. Defaults to layer_hh_betio_3832
 out_plot_betio_household_points <- function(
@@ -1336,6 +1382,7 @@ out_plot_betio_household_points <- function(
       axis.ticks = element_blank()
     )
 }
+# out_plot_betio_household_points()
 
 # TODO
 # Adding a Basemap or Context: While the EA boundaries give structure, it can be
