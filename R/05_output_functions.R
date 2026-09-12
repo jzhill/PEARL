@@ -3247,7 +3247,9 @@ out_xlsx_lri_report <- function(
 
 # --- SCABIES SCREENING OUTCOMES -----------------------------------------------
 
-#' Generate a flextable of Scabies prevalence by age group and sex
+#' Table of scabies prevalence (%) by age group and sex, with an Overall
+#' column and row.
+#'
 #' @param data Dataframe. Defaults to screening_data from the environment
 out_tab_scabies_prevalence_demographics <- function(data = screening_data) {
   scabies_data <- data %>%
@@ -3311,6 +3313,7 @@ out_tab_scabies_prevalence_demographics <- function(data = screening_data) {
 
   return(ft)
 }
+# out_tab_scabies_prevalence_demographics()
 
 
 # --- TPT OUTPUTS ------------------------------------------------
@@ -3432,9 +3435,14 @@ out_plot_tpt_cascade <- function(
       legend.position = "none"
     )
 }
+# out_plot_tpt_cascade()
 
 
-#' Plot TPT Risk Assessment Cascade
+#' Column chart of the TPT risk-assessment cascade: number of patients at
+#' each stage - TST Positive with TB Ruled Out, Risk Factors Assessed,
+#' Baseline ALT Needed/Requested/Resulted, Risk Group Assigned, Risk
+#' Matches Expected.
+#'
 #' @param data Dataframe. Defaults to screening_data from the environment
 out_plot_tpt_risk_cascade <- function(data = screening_data) {
   if (nrow(data) == 0) {
@@ -3510,9 +3518,11 @@ out_plot_tpt_risk_cascade <- function(data = screening_data) {
       legend.position = "none"
     )
 }
+# out_plot_tpt_risk_cascade()
 
 
-#' Plot pie chart of reasons for TPT ineligibility
+#' Pie chart of reasons recorded for TPT ineligibility.
+#'
 #' @param data Dataframe. Defaults to screening_data from the environment
 out_plot_tpt_ineligibility_reasons <- function(data = screening_data) {
   # Data manipulation: Using the pre-calculated column for efficiency
@@ -3546,9 +3556,11 @@ out_plot_tpt_ineligibility_reasons <- function(data = screening_data) {
       colour = "grey10"
     )
 }
+# out_plot_tpt_ineligibility_reasons()
 
 
-#' Plot pie chart of reasons for incomplete TPT assessment
+#' Pie chart of reasons recorded for not completing TPT assessment.
+#'
 #' @param data Dataframe. Defaults to screening_data from the environment
 out_plot_tpt_assessment_gaps <- function(data = screening_data) {
   # Data manipulation: Leverage the pre-calculated column from Script 03
@@ -3582,9 +3594,15 @@ out_plot_tpt_assessment_gaps <- function(data = screening_data) {
       colour = "grey10"
     )
 }
+# out_plot_tpt_assessment_gaps()
 
 
-#' Generate a flextable of TPT initiation status by clinical risk category (Landscape Optimized)
+#' Table of TPT initiation status by clinical risk category (High/Moderate
+#' high/Moderate/Low/Not yet known/Missing), among TST-positive patients
+#' with TB ruled out: ALT result available/not available, TPT
+#' eligible/not eligible, started/not started, plus an All n/% column and
+#' a Total row.
+#'
 #' @param data Dataframe. Defaults to screening_data from the environment
 out_tab_tpt_initiation_by_risk <- function(data = screening_data) {
   if (nrow(data) == 0) {
@@ -3710,6 +3728,7 @@ out_tab_tpt_initiation_by_risk <- function(data = screening_data) {
 
   return(ft)
 }
+# out_tab_tpt_initiation_by_risk()
 
 
 #' Plot age-sex pyramid for the TPT treatment cohort
