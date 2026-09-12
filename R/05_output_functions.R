@@ -4258,9 +4258,13 @@ out_plot_tpt_followup_monthly <- function(data = monthly_long) {
       vjust = 0
     )
 }
+# out_plot_tpt_followup_monthly()
 
 
-#' Plot prevalence of any symptoms during TPT by age group and sex
+#' Bar chart of prevalence of any symptom reported during TPT monitoring, by
+#' age group and sex. Denominator: individuals started on TPT with at least
+#' one follow-up record.
+#'
 #' @param data Dataframe. Defaults to treatment_data from the environment
 out_plot_tpt_symptoms_demographics <- function(data = treatment_data) {
   # 1. Data Preparation: Aggregate symptoms across all monitoring timepoints
@@ -4319,9 +4323,12 @@ out_plot_tpt_symptoms_demographics <- function(data = treatment_data) {
       axis.text.x = element_text(angle = 45, hjust = 1)
     )
 }
+# out_plot_tpt_symptoms_demographics()
 
 
-#' Generate a flextable of patients reporting symptoms during TPT by age and sex
+#' Table of counts of patients ever reporting a symptom during TPT, by age
+#' group and sex, with Male/Female/Total columns and a Total row.
+#'
 #' @param data Dataframe. Defaults to treatment_data from the environment
 out_tab_tpt_symptoms_count <- function(data = treatment_data) {
   if (nrow(data) == 0) {
@@ -4379,9 +4386,14 @@ out_tab_tpt_symptoms_count <- function(data = treatment_data) {
 
   return(ft)
 }
+# out_tab_tpt_symptoms_count()
 
 
-#' Generate a detailed flextable of TPT symptoms by category and timepoint
+#' Table of TPT-related symptom counts by category (DILI, RHS, Common side
+#' effects) and monitoring timepoint (1/3/4-month, AE form) - individual
+#' symptom rows are discovered dynamically from the treatment_data column
+#' names, plus an "Ever" column and a Total row.
+#'
 #' @param data Dataframe. Defaults to treatment_data from the environment
 out_tab_tpt_symptoms_detail <- function(data = treatment_data) {
   if (nrow(data) == 0) {
@@ -4541,9 +4553,14 @@ out_tab_tpt_symptoms_detail <- function(data = treatment_data) {
 
   return(ft)
 }
+# out_tab_tpt_symptoms_detail()
 
 
-#' Generate a flextable comparing TPT outcomes by symptom reporting status
+#' Table comparing TPT outcomes (n and %) between patients who reported side
+#' effects vs. those who didn't, plus an all-patients column, restricted to
+#' cohorts started more than weeks_lag weeks ago so they've had time to
+#' reach an outcome.
+#'
 #' @param data Dataframe. Defaults to treatment_data from the environment
 #' @param weeks_lag Integer. Number of weeks for cohort cutoff (default 16)
 out_tab_tpt_outcomes_by_symptoms <- function(
@@ -4665,9 +4682,13 @@ out_tab_tpt_outcomes_by_symptoms <- function(
 
   return(ft)
 }
+# out_tab_tpt_outcomes_by_symptoms()
 
 
-#' Generate a flextable summarizing types of Adverse Events recorded
+#' Table summarizing types of adverse events recorded - side effects,
+#' illness, medicines, pregnancy - each as n and % of patients with any
+#' reported AE.
+#'
 #' @param data Dataframe. Defaults to treatment_data from the environment
 out_tab_ae_type_summary <- function(data = treatment_data) {
   if (nrow(data) == 0) {
