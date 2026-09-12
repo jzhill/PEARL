@@ -356,7 +356,7 @@ out_tab_activity_summary <- function(data = weekly_data, target_week = NULL) {
 
   return(ft)
 }
-# out_tab_activity_summary()
+# out_tab_activity_summary(data = weekly_data, target_week = as.Date("2026-06-01"))
 
 
 #' Table comparing each team's weekly performance against the project
@@ -470,7 +470,7 @@ out_tab_team_weekly_review <- function(
 
   return(ft)
 }
-# out_tab_team_weekly_review()
+# out_tab_team_weekly_review(data = team_weekly_data, weekly_df = weekly_data, target_week = as.Date("2026-06-01"), period = "current", core_only = TRUE, font_size = 9, table_width = 10)
 
 
 #' Generate a project performance trend table
@@ -597,22 +597,29 @@ out_tab_project_weekly_review <- function(
 
   return(ft)
 }
-# out_tab_project_weekly_review()
+# out_tab_project_weekly_review(data = weekly_data, end_date = as.Date("2026-06-30"), start_date = as.Date("2026-01-01"), periods_back = 12, interval = "week", core_only = TRUE, font_size = 8, table_width = 10)
 
 
 #' Generic transposed table of caller-specified indicators (rows) by EA or
 #' village (columns, via id_col), with an optional Total column - percentages
 #' /proportions are averaged in the Total, counts are summed.
 #'
-#' @param data Master dataframe (ea_data or village_data).
-#' @param indicators Character vector. The exact column names to include as rows.
+#' @param data Master dataframe (ea_data or village_data). Defaults to
+#'   village_data.
+#' @param indicators Character vector. The exact column names to include as
+#'   rows. Defaults to the core indicator set from get_all_indicators_dict(),
+#'   intersected with the columns actually present in data (same expression
+#'   used at the real call site in 05_run_outputs.R).
 #' @param areas Character vector. List of EAs or Villages to include. If NULL, includes all.
 #' @param id_col Character. The name of the ID column ("record_id" or "village").
 #' @param show_total Logical. If TRUE, adds a 'Total' column to the right.
 #' @param font_size Numeric. Base font size (default 8).
 out_tab_geo_indicators <- function(
-  data,
-  indicators,
+  data = village_data,
+  indicators = get_all_indicators_dict() %>%
+    filter(is_core == TRUE) %>%
+    pull(Indicator_Key) %>%
+    intersect(names(data)),
   title = "Geographic Performance Indicators",
   areas = NULL,
   id_col = "village",
@@ -707,7 +714,7 @@ out_tab_geo_indicators <- function(
 
   return(ft)
 }
-# out_tab_geo_indicators(data = village_data, indicators = c("reg", "pop_elig_new"), id_col = "village")
+# out_tab_geo_indicators(data = village_data, indicators = c("reg", "pop_elig_new"), title = "Geographic Performance Indicators", areas = NULL, id_col = "village", show_total = TRUE, font_size = 8)
 
 
 ## Plots -------------------------------------
@@ -766,7 +773,7 @@ out_plot_weekly_activity <- function(data = weekly_data) {
       legend.position = "bottom"
     )
 }
-# out_plot_weekly_activity()
+# out_plot_weekly_activity(data = weekly_data)
 
 
 #' Plot core weekly quality indicators (Matches Core Table)
@@ -961,7 +968,7 @@ out_plot_weekly_quality <- function(
     rel_heights = c(0.3, 0.7)
   )
 }
-# out_plot_weekly_quality()
+# out_plot_weekly_quality(data = weekly_long, end_date = as.Date("2026-06-30"), start_date = as.Date("2026-01-01"), periods_back = 12, interval = "week", date_breaks = "1 week", base_size = 11)
 
 
 #' Line plot of monthly follow-up/clinical quality indicators over time, with
@@ -1047,7 +1054,7 @@ out_plot_monthly_quality_indicators <- function(data = monthly_long) {
       vjust = 1
     )
 }
-# out_plot_monthly_quality_indicators()
+# out_plot_monthly_quality_indicators(data = monthly_long)
 
 
 # --- DEMOGRAPHICS ------------------------------------------------------------
@@ -1072,7 +1079,7 @@ out_plot_age_pyramid <- function(data = screening_data) {
     theme_light() +
     theme(legend.title = element_blank())
 }
-# out_plot_age_pyramid()
+# out_plot_age_pyramid(data = screening_data)
 
 
 # --- GEOGRAPHIC COVERAGE AND SCREENING ---------------------------------------
@@ -1118,7 +1125,7 @@ out_plot_ea_coverage <- function(data = ea_data) {
       axis.text.x = element_text(angle = 90, hjust = 1)
     )
 }
-# out_plot_ea_coverage()
+# out_plot_ea_coverage(data = ea_data)
 
 
 #' Line plot of cumulative proportion of village population screened over
@@ -1162,7 +1169,7 @@ out_plot_village_cumulative_coverage <- function(data = village_data_cum) {
       axis.text.x = element_text(angle = 45, hjust = 1)
     )
 }
-# out_plot_village_cumulative_coverage()
+# out_plot_village_cumulative_coverage(data = village_data_cum)
 
 
 #' Line plot of cumulative number of people screened over time, by village.
@@ -1200,7 +1207,7 @@ out_plot_village_cumulative_screening <- function(
       legend.position = "right"
     )
 }
-# out_plot_village_cumulative_screening()
+# out_plot_village_cumulative_screening(data = village_data_cum, max_y = 30000)
 
 
 #' Choropleth map of raw screening counts by Enumeration Area in Betio.
@@ -1236,7 +1243,7 @@ out_plot_betio_screening_map <- function(data = layer_betio_ea_3832) {
       axis.ticks = element_blank()
     )
 }
-# out_plot_betio_screening_map()
+# out_plot_betio_screening_map(data = layer_betio_ea_3832)
 
 
 #' Choropleth map of screening coverage (proportion registered/eligible) by
@@ -1281,7 +1288,7 @@ out_plot_betio_coverage_map <- function(data = layer_betio_ea_3832) {
       axis.ticks = element_blank()
     )
 }
-# out_plot_betio_coverage_map()
+# out_plot_betio_coverage_map(data = layer_betio_ea_3832)
 
 
 #' Line plot of cumulative proportion of village population screened over
@@ -1352,7 +1359,7 @@ out_plot_village_cumulative_eligible_coverage <- function(
       legend.position = "right"
     )
 }
-# out_plot_village_cumulative_eligible_coverage()
+# out_plot_village_cumulative_eligible_coverage(data = village_data_cum, v_data = village_data)
 
 
 #' Point map of household locations and status over EA boundaries in Betio.
@@ -1384,7 +1391,7 @@ out_plot_betio_household_points <- function(
       axis.ticks = element_blank()
     )
 }
-# out_plot_betio_household_points()
+# out_plot_betio_household_points(ea_layer = layer_betio_ea_3832, hh_layer = layer_hh_betio_3832)
 
 # TODO
 # Adding a Basemap or Context: While the EA boundaries give structure, it can be
@@ -1493,7 +1500,7 @@ out_plot_tb_outcome_proportions_time <- function(
     theme_light() +
     theme(axis.text.x = element_text(angle = 45, hjust = 1))
 }
-# out_plot_tb_outcome_proportions_time()
+# out_plot_tb_outcome_proportions_time(data = weekly_data, end_date = as.Date("2026-06-30"), start_date = as.Date("2026-01-01"), periods_back = 12, interval = "week")
 
 
 #' Column chart of TST screening results over time, as proportions of the
@@ -1591,7 +1598,7 @@ out_plot_tst_proportions_time <- function(
     theme_light() +
     theme(axis.text.x = element_text(angle = 45, hjust = 1))
 }
-# out_plot_tst_proportions_time()
+# out_plot_tst_proportions_time(data = weekly_data, end_date = as.Date("2026-06-30"), start_date = as.Date("2026-01-01"), periods_back = 12, interval = "week")
 
 
 #' Bar chart of TB screening/confirmation prevalence by age group and sex,
@@ -1667,7 +1674,7 @@ out_plot_tb_yield_demographics <- function(data = screening_data) {
       axis.text.x = element_text(angle = 45, hjust = 1)
     )
 }
-# out_plot_tb_yield_demographics()
+# out_plot_tb_yield_demographics(data = screening_data)
 
 
 #' Bar chart of TST positivity prevalence by age category.
@@ -1705,7 +1712,7 @@ out_plot_tst_positivity_by_age <- function(data = screening_data) {
     ) +
     theme_light()
 }
-# out_plot_tst_positivity_by_age()
+# out_plot_tst_positivity_by_age(data = screening_data)
 
 
 #' Line plot of TST positivity proportions by age category at the >=5mm and
@@ -1789,7 +1796,7 @@ out_plot_tst_thresholds_age <- function(data = screening_data) {
     theme_light() +
     theme(legend.position = "top")
 }
-# out_plot_tst_thresholds_age()
+# out_plot_tst_thresholds_age(data = screening_data)
 
 
 #' Bar chart of TST positivity prevalence by age group and sex. Denominator:
@@ -1843,7 +1850,7 @@ out_plot_tst_yield_demographics <- function(data = screening_data) {
       axis.text.x = element_text(angle = 45, hjust = 1)
     )
 }
-# out_plot_tst_yield_demographics()
+# out_plot_tst_yield_demographics(data = screening_data)
 
 
 ## Tables -------------------------------------
@@ -1926,7 +1933,7 @@ out_tab_tst_yield_demographics_table <- function(data = screening_data) {
 
   return(ft)
 }
-# out_tab_tst_yield_demographics_table()
+# out_tab_tst_yield_demographics_table(data = screening_data)
 
 
 #' Table of the sputum/GeneXpert diagnostic cascade by age group: registered,
@@ -1991,7 +1998,7 @@ out_tab_sputum_cascade <- function(data = screening_data) {
 
   return(ft)
 }
-# out_tab_sputum_cascade()
+# out_tab_sputum_cascade(data = screening_data)
 
 
 #' Table of quarterly TB referral outcomes (NTP diagnosis categories) for
@@ -2071,7 +2078,7 @@ out_tab_tb_referral_outcomes <- function(data = screening_data) {
 
   return(ft)
 }
-# out_tab_tb_referral_outcomes()
+# out_tab_tb_referral_outcomes(data = screening_data)
 
 
 #' Table of TB screening yield and number-needed-to-screen (NNS) by age
@@ -2176,7 +2183,7 @@ out_tab_tb_yield_efficiency <- function(data = screening_data) {
 
   return(ft)
 }
-# out_tab_tb_yield_efficiency()
+# out_tab_tb_yield_efficiency(data = screening_data)
 
 
 #' Table of TB presumptive and confirmed case counts and percentages by age
@@ -2277,7 +2284,7 @@ out_tab_tb_yield_demographics_table <- function(data = screening_data) {
 
   return(ft)
 }
-# out_tab_tb_yield_demographics_table()
+# out_tab_tb_yield_demographics_table(data = screening_data)
 
 
 # --- LEPROSY AND PREVENTION SCREENING OUTCOMES -------------------------------
@@ -2355,7 +2362,7 @@ out_plot_lep_yield_demographics <- function(data = screening_data) {
       axis.text.x = element_text(angle = 45, hjust = 1)
     )
 }
-# out_plot_lep_yield_demographics()
+# out_plot_lep_yield_demographics(data = screening_data)
 
 
 #' Column chart of treatment-type proportions (No treatment, MDT, TBRx, TPT,
@@ -2451,7 +2458,7 @@ out_plot_treatment_proportions_time <- function(
       axis.text.x = element_text(angle = 45, hjust = 1)
     )
 }
-# out_plot_treatment_proportions_time()
+# out_plot_treatment_proportions_time(data = screening_data, start_date = as.Date("2023-01-01"), end_date = as.Date("2026-06-30"), interval = "month")
 
 
 ## Tables -------------------------------------
@@ -2553,7 +2560,7 @@ out_tab_lep_yield_demographics_table <- function(data = screening_data) {
 
   return(ft)
 }
-# out_tab_lep_yield_demographics_table()
+# out_tab_lep_yield_demographics_table(data = screening_data)
 
 
 #' Table of quarterly leprosy referral outcomes (NLP diagnosis categories)
@@ -2633,7 +2640,7 @@ out_tab_lep_referral_outcomes <- function(data = screening_data) {
 
   return(ft)
 }
-# out_tab_lep_referral_outcomes()
+# out_tab_lep_referral_outcomes(data = screening_data)
 
 
 #' Shared household-level leprosy indicator summary. Caller must group_by()
@@ -2874,7 +2881,7 @@ out_tab_lep_ind_time <- function(
 
   return(ft)
 }
-# out_tab_lep_ind_time()
+# out_tab_lep_ind_time(data_hh = household_data, data_scr = screening_data, start_date = as.Date("2023-01-01"), end_date = as.Date("2026-06-30"), interval = "year", font_size = 9, table_width = 10, return_data = FALSE)
 
 
 #' Table of household enumeration and leprosy screening/treatment indicators
@@ -3035,7 +3042,7 @@ out_tab_lep_village <- function(
 
   return(ft)
 }
-# out_tab_lep_village()
+# out_tab_lep_village(data_hh = household_data, data_scr = screening_data, villages = NULL, start_date = as.Date("2025-01-01"), end_date = as.Date("2025-12-31"), font_size = 8, table_width = 10)
 
 
 #' Table of treatment-type counts and row-wise percentages (No treatment,
@@ -3177,7 +3184,7 @@ out_tab_treatment_proportions_time <- function(
 
   return(ft)
 }
-# out_tab_treatment_proportions_time()
+# out_tab_treatment_proportions_time(data = screening_data, start_date = as.Date("2023-01-01"), end_date = as.Date("2026-06-30"), interval = "month", return_data = FALSE)
 
 
 #' Write the leprosy grant report data package (xlsx) with one sheet per underlying table
@@ -3315,7 +3322,7 @@ out_tab_scabies_prevalence_demographics <- function(data = screening_data) {
 
   return(ft)
 }
-# out_tab_scabies_prevalence_demographics()
+# out_tab_scabies_prevalence_demographics(data = screening_data)
 
 
 # --- TPT OUTPUTS ------------------------------------------------
@@ -3437,7 +3444,7 @@ out_plot_tpt_cascade <- function(
       legend.position = "none"
     )
 }
-# out_plot_tpt_cascade()
+# out_plot_tpt_cascade(s_data = screening_data, t_data = treatment_data, weeks_lag = 16)
 
 
 #' Column chart of the TPT risk-assessment cascade: number of patients at
@@ -3520,7 +3527,7 @@ out_plot_tpt_risk_cascade <- function(data = screening_data) {
       legend.position = "none"
     )
 }
-# out_plot_tpt_risk_cascade()
+# out_plot_tpt_risk_cascade(data = screening_data)
 
 
 #' Pie chart of reasons recorded for TPT ineligibility.
@@ -3558,7 +3565,7 @@ out_plot_tpt_ineligibility_reasons <- function(data = screening_data) {
       colour = "grey10"
     )
 }
-# out_plot_tpt_ineligibility_reasons()
+# out_plot_tpt_ineligibility_reasons(data = screening_data)
 
 
 #' Pie chart of reasons recorded for not completing TPT assessment.
@@ -3596,7 +3603,7 @@ out_plot_tpt_assessment_gaps <- function(data = screening_data) {
       colour = "grey10"
     )
 }
-# out_plot_tpt_assessment_gaps()
+# out_plot_tpt_assessment_gaps(data = screening_data)
 
 
 #' Table of TPT initiation status by clinical risk category (High/Moderate
@@ -3730,7 +3737,7 @@ out_tab_tpt_initiation_by_risk <- function(data = screening_data) {
 
   return(ft)
 }
-# out_tab_tpt_initiation_by_risk()
+# out_tab_tpt_initiation_by_risk(data = screening_data)
 
 
 #' Age-sex population pyramid of the TPT treatment cohort.
@@ -3769,7 +3776,7 @@ out_plot_tpt_age_pyramid <- function(data = treatment_data) {
       legend.position = "bottom"
     )
 }
-# out_plot_tpt_age_pyramid()
+# out_plot_tpt_age_pyramid(data = treatment_data)
 
 
 #' Table of TPT patient counts by age group and sex, with Male/Female/Total
@@ -3827,7 +3834,7 @@ out_tab_tpt_demographics_count <- function(data = treatment_data) {
 
   return(ft)
 }
-# out_tab_tpt_demographics_count()
+# out_tab_tpt_demographics_count(data = treatment_data)
 
 
 #' Column chart of monthly TPT outcome proportions among all treatment
@@ -3886,7 +3893,7 @@ out_plot_tpt_outcome_proportions <- function(data = treatment_data) {
       axis.text.x = element_text(angle = 45, hjust = 1)
     )
 }
-# out_plot_tpt_outcome_proportions()
+# out_plot_tpt_outcome_proportions(data = treatment_data)
 
 
 #' Table of TPT outcome counts (and row-wise %) by month, restricted to
@@ -3989,7 +3996,7 @@ out_tab_tpt_outcomes_monthly <- function(
 
   return(ft)
 }
-# out_tab_tpt_outcomes_monthly()
+# out_tab_tpt_outcomes_monthly(data = treatment_data, weeks_lag = 16)
 
 
 #' Step plot of treatment retention (% of cohort still on TPT) over days
@@ -4047,7 +4054,7 @@ out_plot_tpt_retention_step <- function(data = treatment_data, max_day = 168) {
       panel.grid.minor = element_line(color = "grey95")
     )
 }
-# out_plot_tpt_retention_step()
+# out_plot_tpt_retention_step(data = treatment_data, max_day = 168)
 
 
 #' Table of TPT routine monitoring (1/3/4-month review) counts, split into
@@ -4173,7 +4180,7 @@ out_tab_tpt_monitoring_summary <- function(data = treatment_data) {
 
   return(ft)
 }
-# out_tab_tpt_monitoring_summary()
+# out_tab_tpt_monitoring_summary(data = treatment_data)
 
 
 #' Line plot of monthly treatment follow-up/completion rates over time.
@@ -4260,7 +4267,7 @@ out_plot_tpt_followup_monthly <- function(data = monthly_long) {
       vjust = 0
     )
 }
-# out_plot_tpt_followup_monthly()
+# out_plot_tpt_followup_monthly(data = monthly_long)
 
 
 #' Bar chart of prevalence of any symptom reported during TPT monitoring, by
@@ -4325,7 +4332,7 @@ out_plot_tpt_symptoms_demographics <- function(data = treatment_data) {
       axis.text.x = element_text(angle = 45, hjust = 1)
     )
 }
-# out_plot_tpt_symptoms_demographics()
+# out_plot_tpt_symptoms_demographics(data = treatment_data)
 
 
 #' Table of counts of patients ever reporting a symptom during TPT, by age
@@ -4388,7 +4395,7 @@ out_tab_tpt_symptoms_count <- function(data = treatment_data) {
 
   return(ft)
 }
-# out_tab_tpt_symptoms_count()
+# out_tab_tpt_symptoms_count(data = treatment_data)
 
 
 #' Table of TPT-related symptom counts by category (DILI, RHS, Common side
@@ -4555,7 +4562,7 @@ out_tab_tpt_symptoms_detail <- function(data = treatment_data) {
 
   return(ft)
 }
-# out_tab_tpt_symptoms_detail()
+# out_tab_tpt_symptoms_detail(data = treatment_data)
 
 
 #' Table comparing TPT outcomes (n and %) between patients who reported side
@@ -4684,7 +4691,7 @@ out_tab_tpt_outcomes_by_symptoms <- function(
 
   return(ft)
 }
-# out_tab_tpt_outcomes_by_symptoms()
+# out_tab_tpt_outcomes_by_symptoms(data = treatment_data, weeks_lag = 16)
 
 
 #' Table summarizing types of adverse events recorded - side effects,
@@ -4753,7 +4760,7 @@ out_tab_ae_type_summary <- function(data = treatment_data) {
 
   return(ft)
 }
-# out_tab_ae_type_summary()
+# out_tab_ae_type_summary(data = treatment_data)
 
 
 #' Table of the adverse-event profile among patients who discontinued TPT:
@@ -4834,7 +4841,7 @@ out_tab_tpt_discontinued_ae_profile <- function(data = treatment_data) {
 
   return(ft)
 }
-# out_tab_tpt_discontinued_ae_profile()
+# out_tab_tpt_discontinued_ae_profile(data = treatment_data)
 
 
 # --- MODELLING & SENSITIVITY INPUTS -------------------------------------------
