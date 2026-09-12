@@ -104,7 +104,13 @@ library(openxlsx)
 #        raw screening_data; default changed from "6 months of always-weekly
 #        bars" (mixed units) to periods_back = 12, interval = "week", matching
 #        the rest of this group)
-#      - start_year/end_year:             out_tab_lep_village
+#      - start_date/end_date (whole calendar years, no periods_back yet -
+#        considered adding periods_back/interval="year" but deferred, on
+#        demand only): out_tab_lep_village (2026-09: renamed from
+#        start_year/end_year; also now shares its indicator definitions with
+#        out_tab_lep_ind_time via lep_hh_metrics_by_key()/
+#        lep_scr_metrics_by_key() - see the TODO on those helpers for the
+#        planned move into build_time_agg()/build_area_agg())
 #      - weeks_lag (cohort-maturity cutoff, NOT a display window - excludes anyone who
 #        hasn't had time to reach an outcome yet): out_tab_tpt_outcomes_monthly,
 #        out_tab_tpt_outcomes_by_symptoms, out_plot_tpt_cascade (2026-09: renamed from
@@ -1345,15 +1351,9 @@ out_plot_betio_household_points <- function(
 ## Plots -------------------------------------
 
 #' Column chart of TB screening outcomes over time, as proportions of the
-#' total screened in each time period.
-#'
-#' 2026-09: renamed from out_plot_tb_outcome_proportions_6m and refactored to
-#' read weekly_data/monthly_data's precomputed tbdec_prestb/tbdec_ro/
-#' tbdec_unc/tbdec_missing columns (see tb_dist_by_key() in 03_tidy_data.R)
-#' instead of re-deriving the same 4-category breakdown from raw
-#' screening_data - these are already the same counts, computed the same
-#' way. The old version also mixed units (a 6-*month* window of always-
-#' *weekly* bars); default is now a clean periods_back/interval pair.
+#' total screened in each time period. TB screening outcome indicators (TB 
+#' decision = presumptive, uncertain, ruled out or missing if NA) as a
+#' proportion of number registered in the period.
 #'
 #' @param data Dataframe. Defaults to weekly_data (interval = "week") or
 #'   monthly_data (interval = "month").
@@ -1449,14 +1449,8 @@ out_plot_tb_outcome_proportions_time <- function(
 
 
 #' Column chart of TST screening results over time, as proportions of the
-#' total screened in each time period.
-#'
-#' 2026-09: renamed from out_plot_tst_proportions_6m and refactored to read
-#' weekly_data/monthly_data's precomputed tst_pos/tst_neg/tst_missing
-#' columns (see tst_dist_by_key() in 03_tidy_data.R) instead of re-deriving
-#' the same 3-category breakdown from raw screening_data. See
-#' out_plot_tb_outcome_proportions_time() for the equivalent TB version and
-#' full rationale.
+#' total screened in each time period. TST outcome indicators (TST = positive, 
+#' negative, missing) as a proportion of number registered in the period.
 #'
 #' @param data Dataframe. Defaults to weekly_data (interval = "week") or
 #'   monthly_data (interval = "month").
@@ -2552,19 +2546,79 @@ out_tab_lep_referral_outcomes <- function(data = screening_data) {
 }
 
 
-#' Generate an annual leprosy-focused indicator table
-#' @param data_hh Dataframe. Defaults to household_data.
-#' @param data_scr Dataframe. Defaults to screening_data.
-#' @param start_year Numeric. Optional; defaults to min year in data.
-#' @param end_year Numeric. Optional; defaults to max year in data.
-#' @param font_size Numeric. Base font size (default 9).
-#' @param table_width Numeric. Total table width in inches (default NULL).
-#' Generate a leprosy-focused indicator table aggregated over a chosen time interval
+#' Shared household-level leprosy indicator summary. Caller must group_by()
+#' the desired key (a time period, or a village/"Other" group) before piping
+#' in. Indicators: Enumerated (HH), Enumerated (Pop), Eligible (Pop).
 #'
-#' Aggregates household and screening/leprosy metrics into year, quarter, or
-#' month buckets across a date range. Formerly `out_tab_lep_annual()`
-#' (year-only); renamed and extended 2026-09 to support quarter/month
-#' granularity for grant reporting periods.
+#' Used by both out_tab_lep_ind_time (time axis) and out_tab_lep_village
+#' (village axis) so the indicator definitions live in one place - mirrors
+#' the xxx_by_key() helper pattern already used in 03_tidy_data.R's
+#' build_time_agg()/build_area_agg() (e.g. tb_dist_by_key()).
+#'
+#' TODO: move into build_time_agg()/build_area_agg() as a proper
+#' lep_dist_by_key()-style pre-aggregated column set (like the existing TB/
+#' TST breakdowns), so this lives with the other indicator aggregators in
+#' 03_tidy_data.R instead of here. This is a pragmatic interim fix.
+#'
+#' @param df_hh_grouped Household data, already piped through group_by().
+lep_hh_metrics_by_key <- function(df_hh_grouped) {
+  df_hh_grouped %>%
+    summarise(
+      "Enumerated (HH)" = n(),
+      "Enumerated (Pop)" = sum(hh_size, na.rm = TRUE),
+      "Eligible (Pop)" = sum(hh_size_elig, na.rm = TRUE),
+      .groups = "drop"
+    )
+}
+
+#' Shared screening/leprosy-level indicator summary. Caller must group_by()
+#' the desired key before piping in. Indicators: Registered, Screened for
+#' Leprosy, Leprosy Referred, Diag: Confirmed/Ruled out/Already on MDT/
+#' Pending/Missing, Any Treatment, Rx: MDT/SDR/TBRx/TPT/NR.
+#'
+#' See lep_hh_metrics_by_key() for the shared-helper rationale and TODO.
+#'
+#' @param df_scr_grouped Screening data, already piped through group_by().
+lep_scr_metrics_by_key <- function(df_scr_grouped) {
+  df_scr_grouped %>%
+    summarise(
+      "Registered" = n(),
+      "Screened for Leprosy" = sum(lepdec_bin, na.rm = TRUE),
+      "Leprosy Referred" = sum(referred_nlp == TRUE, na.rm = TRUE),
+      "Diag: Confirmed" = sum(nlp_diagnosis == "Confirmed", na.rm = TRUE),
+      "Diag: Ruled out" = sum(nlp_diagnosis == "Ruled out", na.rm = TRUE),
+      "Diag: Already on MDT" = sum(
+        nlp_diagnosis == "Already on MDT",
+        na.rm = TRUE
+      ),
+      "Diag: Pending/Other" = sum(
+        nlp_diagnosis %in%
+          c("Further review", "Contacted not reviewed", "Not yet contacted"),
+        na.rm = TRUE
+      ),
+      "Diag: Missing" = sum(
+        referred_nlp == TRUE & is.na(nlp_diagnosis),
+        na.rm = TRUE
+      ),
+      "Any Treatment" = sum(!is.na(calc_any_treatment), na.rm = TRUE),
+      "Rx: MDT" = sum(calc_any_treatment == "MDT", na.rm = TRUE),
+      "Rx: SDR" = sum(calc_any_treatment == "SDR", na.rm = TRUE),
+      "Rx: TBRx" = sum(calc_any_treatment == "TBRx", na.rm = TRUE),
+      "Rx: TPT" = sum(calc_any_treatment == "TPT", na.rm = TRUE),
+      "Rx: NR" = sum(
+        referred_nlp == TRUE & is.na(calc_any_treatment),
+        na.rm = TRUE
+      ),
+      .groups = "drop"
+    )
+}
+
+
+#' Table of household enumeration and leprosy screening/treatment indicators
+#' by time period (year, quarter, or month). Indicators: Enumerated (HH),
+#' Enumerated (Pop), Eligible (Pop); Registered, Screened for Leprosy,
+#' Leprosy Referred, Diag: Confirmed/Ruled out/Already on MDT/Pending/
+#' Missing, Any Treatment, Rx: MDT/SDR/TBRx/TPT/NR.
 #'
 #' @param data_hh Dataframe. Defaults to household_data.
 #' @param data_scr Dataframe. Defaults to screening_data.
@@ -2612,7 +2666,8 @@ out_tab_lep_ind_time <- function(
     )
   }
 
-  # 2. Custom Aggregation Logic
+  # 2. Aggregation via shared indicator helpers (see lep_hh_metrics_by_key()/
+  # lep_scr_metrics_by_key() above)
 
   # A. Household Metrics
   hh_metrics <- data_hh %>%
@@ -2622,12 +2677,7 @@ out_tab_lep_ind_time <- function(
       .order = floor_date(hh_date, unit = interval)
     ) %>%
     group_by(Period, .order) %>%
-    summarise(
-      "Enumerated (HH)" = n(),
-      "Enumerated (Pop)" = sum(hh_size, na.rm = TRUE),
-      "Eligible (Pop)" = sum(hh_size_elig, na.rm = TRUE),
-      .groups = "drop"
-    )
+    lep_hh_metrics_by_key()
 
   # B. Screening & Leprosy Metrics
   scr_metrics <- data_scr %>%
@@ -2637,41 +2687,7 @@ out_tab_lep_ind_time <- function(
       .order = floor_date(en_date_visit, unit = interval)
     ) %>%
     group_by(Period, .order) %>%
-    summarise(
-      "Registered" = n(),
-      "Screened for Leprosy" = sum(lepdec_bin, na.rm = TRUE),
-      "Leprosy Referred" = sum(referred_nlp == TRUE, na.rm = TRUE),
-
-      # Diagnosis Breakdown
-      "Diag: Confirmed" = sum(nlp_diagnosis == "Confirmed", na.rm = TRUE),
-      "Diag: Ruled out" = sum(nlp_diagnosis == "Ruled out", na.rm = TRUE),
-      "Diag: Already on MDT" = sum(
-        nlp_diagnosis == "Already on MDT",
-        na.rm = TRUE
-      ),
-      "Diag: Pending/Other" = sum(
-        nlp_diagnosis %in%
-          c("Further review", "Contacted not reviewed", "Not yet contacted"),
-        na.rm = TRUE
-      ),
-      "Diag: Missing" = sum(
-        referred_nlp == TRUE & is.na(nlp_diagnosis),
-        na.rm = TRUE
-      ),
-
-      # Treatment Breakdown
-      "Any Treatment" = sum(!is.na(calc_any_treatment), na.rm = TRUE),
-      "Rx: MDT" = sum(calc_any_treatment == "MDT", na.rm = TRUE),
-      "Rx: SDR" = sum(calc_any_treatment == "SDR", na.rm = TRUE),
-      "Rx: TBRx" = sum(calc_any_treatment == "TBRx", na.rm = TRUE),
-      "Rx: TPT" = sum(calc_any_treatment == "TPT", na.rm = TRUE),
-      "Rx: NR" = sum(
-        referred_nlp == TRUE & is.na(calc_any_treatment),
-        na.rm = TRUE
-      ),
-
-      .groups = "drop"
-    )
+    lep_scr_metrics_by_key()
 
   # 3. Combine, Calculate Totals, and Format
 
@@ -2770,16 +2786,19 @@ out_tab_lep_ind_time <- function(
 }
 
 
-#' Generate a village-level leprosy-focused indicator table with "Other" category
-#'
-#' Filters source data by year range. Selected villages are shown individually;
-#' all other villages with data in that period are grouped into an "Other" column.
+#' Table of household enumeration and leprosy screening/treatment indicators
+#' by village, over a chosen date range. Named villages appear as individual
+#' columns; everyone from an unlisted village is grouped into "Other"; a
+#' "Total" column sums across all villages. Indicators: Enumerated (HH),
+#' Enumerated (Pop), Eligible (Pop); Registered, Screened for Leprosy,
+#' Leprosy Referred, Diag: Confirmed/Ruled out/Already on MDT/Pending/
+#' Missing, Any Treatment, Rx: MDT/SDR/TBRx/TPT/NR.
 #'
 #' @param data_hh Dataframe. Defaults to household_data.
 #' @param data_scr Dataframe. Defaults to screening_data.
-#' @param villages Character vector. Specific villages to disaggregate.
-#' @param start_year Numeric. Optional; filters data to year range.
-#' @param end_year Numeric. Optional; filters data to year range.
+#' @param villages Character vector. Specific villages to disaggregate; everyone else is grouped into "Other".
+#' @param start_date Date. Optional; defaults to 1 Jan of the earliest year present in data_scr$en_date_visit.
+#' @param end_date Date. Optional; defaults to 31 Dec of the latest year present in data_scr$en_date_visit.
 #' @param font_size Numeric. Base font size for the table (default 8).
 #' @param table_width Numeric. Total table width in inches (default NULL).
 #'
@@ -2788,8 +2807,8 @@ out_tab_lep_village <- function(
   data_hh = household_data,
   data_scr = screening_data,
   villages = NULL,
-  start_year = NULL,
-  end_year = NULL,
+  start_date = NULL,
+  end_date = NULL,
   font_size = 8,
   table_width = NULL
 ) {
@@ -2797,20 +2816,29 @@ out_tab_lep_village <- function(
     return(no_data_flextable())
   }
 
-  # 1. Date/Year Filtering Setup
-  if (is.null(end_year)) {
-    end_year <- max(year(data_scr$en_date_visit), na.rm = TRUE)
+  # 1. Date Range Setup - defaults span whole calendar years (1 Jan to 31
+  # Dec), matching the previous start_year/end_year behavior exactly
+  if (is.null(end_date)) {
+    end_date <- as.Date(paste0(
+      max(year(data_scr$en_date_visit), na.rm = TRUE),
+      "-12-31"
+    ))
   }
-  if (is.null(start_year)) {
-    start_year <- min(year(data_scr$en_date_visit), na.rm = TRUE)
+  if (is.null(start_date)) {
+    start_date <- as.Date(paste0(
+      min(year(data_scr$en_date_visit), na.rm = TRUE),
+      "-01-01"
+    ))
   }
-
-  years_range <- start_year:end_year
 
   # 2. Re-aggregate Household Metrics
   vh_metrics_long <- data_hh %>%
-    mutate(Year = year(hh_date)) %>%
-    filter(Year %in% years_range, hh_reached == TRUE, !is.na(hh_village_ea)) %>%
+    filter(
+      hh_date >= start_date,
+      hh_date <= end_date,
+      hh_reached == TRUE,
+      !is.na(hh_village_ea)
+    ) %>%
     # Assign 'Other' status to villages not in the focus list
     mutate(
       village_group = case_when(
@@ -2820,17 +2848,17 @@ out_tab_lep_village <- function(
       )
     ) %>%
     group_by(village = village_group) %>%
-    summarise(
-      "Enumerated (HH)" = n(),
-      "Eligible (Pop)" = sum(hh_size_elig, na.rm = TRUE),
-      .groups = "drop"
-    ) %>%
+    lep_hh_metrics_by_key() %>%
     pivot_longer(-village, names_to = "Indicator_Name", values_to = "Value")
 
   # 3. Re-aggregate Screening Metrics
   v_scr_metrics_long <- data_scr %>%
-    mutate(Year = year(en_date_visit)) %>%
-    filter(Year %in% years_range, !is.na(village), village != "") %>%
+    filter(
+      en_date_visit >= start_date,
+      en_date_visit <= end_date,
+      !is.na(village),
+      village != ""
+    ) %>%
     # Assign 'Other' status to villages not in the focus list
     mutate(
       village_group = case_when(
@@ -2840,36 +2868,7 @@ out_tab_lep_village <- function(
       )
     ) %>%
     group_by(village = village_group) %>%
-    summarise(
-      "Registered" = n(),
-      "Screened for Leprosy" = sum(lepdec_bin, na.rm = TRUE),
-      "Leprosy Referred" = sum(referred_nlp == TRUE, na.rm = TRUE),
-      "Diag: Confirmed" = sum(nlp_diagnosis == "Confirmed", na.rm = TRUE),
-      "Diag: Ruled out" = sum(nlp_diagnosis == "Ruled out", na.rm = TRUE),
-      "Diag: Already on MDT" = sum(
-        nlp_diagnosis == "Already on MDT",
-        na.rm = TRUE
-      ),
-      "Diag: Pending/Other" = sum(
-        nlp_diagnosis %in%
-          c("Further review", "Contacted not reviewed", "Not yet contacted"),
-        na.rm = TRUE
-      ),
-      "Diag: Missing" = sum(
-        referred_nlp == TRUE & is.na(nlp_diagnosis),
-        na.rm = TRUE
-      ),
-      "Any Treatment" = sum(!is.na(calc_any_treatment), na.rm = TRUE),
-      "Rx: MDT" = sum(calc_any_treatment == "MDT", na.rm = TRUE),
-      "Rx: SDR" = sum(calc_any_treatment == "SDR", na.rm = TRUE),
-      "Rx: TBRx" = sum(calc_any_treatment == "TBRx", na.rm = TRUE),
-      "Rx: TPT" = sum(calc_any_treatment == "TPT", na.rm = TRUE),
-      "Rx: NR" = sum(
-        referred_nlp == TRUE & is.na(calc_any_treatment),
-        na.rm = TRUE
-      ),
-      .groups = "drop"
-    ) %>%
+    lep_scr_metrics_by_key() %>%
     pivot_longer(-village, names_to = "Indicator_Name", values_to = "Value")
 
   # 4. Combine, Total, and Wide-Pivot
@@ -2909,7 +2908,13 @@ out_tab_lep_village <- function(
   other_col <- if ("Other" %in% names(final_df)) "Other" else NULL
   display_cols <- c(focus_cols, other_col, "Total")
 
-  title_text <- paste0("Leprosy Indicators (", start_year, "-", end_year, ")")
+  title_text <- paste0(
+    "Leprosy Indicators (",
+    format(start_date, "%Y"),
+    "-",
+    format(end_date, "%Y"),
+    ")"
+  )
 
   # 6. Flextable Rendering
   ft <- final_df %>%
