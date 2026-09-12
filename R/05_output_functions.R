@@ -95,12 +95,17 @@ library(openxlsx)
 #                                          controls bucketing/labels. Not yet retrofitted elsewhere.)
 #      - start_date/end_date (no interval): out_plot_weekly_quality, out_tab_project_weekly_review
 #      - start_year/end_year:             out_tab_lep_village
-#      - weeks_lookback:                  out_plot_tpt_cascade
-#      - weeks_lag:                       out_tab_tpt_outcomes_monthly, out_tab_tpt_outcomes_by_symptoms
+#      - weeks_lag (cohort-maturity cutoff, NOT a display window - excludes anyone who
+#        hasn't had time to reach an outcome yet): out_tab_tpt_outcomes_monthly,
+#        out_tab_tpt_outcomes_by_symptoms, out_plot_tpt_cascade (2026-09: renamed from
+#        weeks_lookback here - same mechanism, was just named differently)
 #      - target_week (point, not range):  out_tab_activity_summary, out_tab_team_weekly_review
 #    And two functions hardcode a 6-month lookback with no parameter at all:
 #      out_plot_tb_outcome_proportions_6m, out_plot_tst_proportions_6m (literal months(6)).
-#    Don't unify without agreeing a single house convention first.
+#    2026-09: reviewing function-by-function with Jeremy before unifying further -
+#    several of these encode a specific, deliberate reason (e.g. anchoring to the latest
+#    date IN THE DATA rather than Sys.Date(), to avoid a blank current period when data
+#    collection lags) that needs to be confirmed/recovered per function, not assumed.
 #
 # 4. VIRIDIS COLOR-SCALE INCONSISTENCY:
 #    Most charts use scale_fill/color_viridis_d(option = "F", begin = 0.2, end = 0.8).
@@ -3019,19 +3024,22 @@ out_tab_scabies_prevalence_demographics <- function(data = screening_data) {
 #' Plot TPT cascade: from TST positive to treatment completion
 #' @param s_data Dataframe. Defaults to screening_data from the environment
 #' @param t_data Dataframe. Defaults to treatment_data from the environment
-#' @param weeks_lookback Numeric. Number of weeks to look back for the "expected outcome" cohort (default 16)
+#' @param weeks_lag Numeric. Minimum weeks since TPT start before a patient is counted in
+#'   the "expected outcome" cohort (default 16). Renamed 2026-09 from weeks_lookback: this
+#'   is a cohort-maturity cutoff (exclude anyone who hasn't had time to reach an outcome
+#'   yet), the same mechanism as weeks_lag in out_tab_tpt_outcomes_monthly and
+#'   out_tab_tpt_outcomes_by_symptoms - not a display window, despite the old name.
 out_plot_tpt_cascade <- function(
   s_data = screening_data,
   t_data = treatment_data,
-  weeks_lookback = 16
+  weeks_lag = 16
 ) {
   if (nrow(s_data) == 0 && nrow(t_data) == 0) {
     return(no_data_plot())
   }
 
-  # Define the lookback date for the "Expected Outcome" cohort
-  # This uses the weeks_lookback parameter instead of a hard-coded value
-  lookback_date <- Sys.Date() - weeks(weeks_lookback)
+  # Cohort-maturity cutoff for the "Expected Outcome" stage below
+  lookback_date <- Sys.Date() - weeks(weeks_lag)
 
   # 1. Aggregate Screening-derived stages
   tpt_cascade_sd <- s_data %>%
@@ -3095,7 +3103,7 @@ out_plot_tpt_cascade <- function(
     "Started TPT" = "Started\nTPT",
     "4+ months since starting" = paste0(
       "≥",
-      round(weeks_lookback / 4),
+      round(weeks_lag / 4),
       " months\nsince start"
     ),
     "Treatment Outcome Assigned" = "Outcome\nassigned",
